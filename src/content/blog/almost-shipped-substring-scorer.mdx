@@ -1,0 +1,70 @@
+---
+title: "I Almost Shipped a Substring Scorer"
+description: "Why the temptation of a quick-and-dirty evaluator should be resisted, with a personal story from building a DA agent."
+publishedAt: 2026-05-27
+draft: false
+---
+
+I almost shipped a substring scorer. Here's why I'm glad I didn't.
+
+## The temptation
+
+I was building a data-analysis agent against InfiAgent-DABench. Each task in the benchmark has a question ("what's the median tenure of customers who churned?") and a gold answer ("0.83"). The agent emits an answer string. The scorer's job is to decide if the agent was right.
+
+The shortest possible scorer is one line:
+
+```python
+def score(predicted: str, expected: str) -> bool:
+    return expected.strip() in predicted.strip()
+```
+
+It's the kind of thing you write in five minutes on a Saturday afternoon when the real work — the agent, the sandbox, the prompt engineering — is the thing you actually want to be doing. The scorer is plumbing. Get a number, move on.
+
+I was about to ship that.
+
+## What stopped me
+
+I was reading the InfiAgent repo to figure out the answer format and I noticed `eval_closed_form.py` sitting in the root. It wasn't documented anywhere I'd been; the README mostly talks about the data, not the scoring. But it was clearly real code, with imports and tests and a regex.
+
+Reading it, the picture got more interesting. The benchmark doesn't expect a freeform string — it expects a *structured* answer with named slots:
+
+```text
+@median_tenure[24.0] @churn_segment[month-to-month]
+```
+
+The scorer extracts each `@name[value]` pair with a regex, looks up the expected schema for that question (which says "median_tenure should be a float, churn_segment should be one of {month-to-month, one-year, two-year}"), and grades each slot independently. Floats get a tolerance. Strings get coerced and compared case-insensitively. Missing slots count as wrong. Extra slots are ignored.
+
+My one-line substring scorer would have been wrong in at least four different ways for the same dataset:
+
+1. **A model answer of `"The median tenure is 24."` against gold `24.0` would have *passed*** under `in` — `"24" in "24."` is true — even though the structured scorer would have read no slots out of it and called it zero.
+2. **A model answer of `"24.5"` against gold `24.0`** would *fail* substring but *pass* the structured scorer with default float tolerance. Both are arguably right for different reasons; the official scorer makes the choice explicit, mine made it by accident.
+3. **A model that answered every question with a paragraph containing all the digits 0–9** would score absurdly high on substring matching. (This is funny in isolation. It's terrifying as a thing your agent could converge to under any kind of optimization pressure.)
+4. **A model that emitted the right `@name[value]` slot but in `@Name[value]` (capitalized)** would pass substring trivially but fail the structured scorer's strict name match — which is the *correct* failure, because the downstream parser cares.
+
+In other words: substring matching wasn't measuring "did the agent get the right answer". It was measuring "did the agent emit the gold characters somewhere in its output". Those two things diverge in both directions, and they diverge in the direction that makes your numbers look better.
+
+## The resume claim
+
+Here's the thing that turned this from a code-quality issue into an honesty issue. When this project is done, I want to write on my resume:
+
+> Built a code-as-action data-analysis agent achieving **N% accuracy on InfiAgent-DABench**.
+
+That number — whatever N is — is a load-bearing claim. A recruiter or an interviewer reading it has a right to assume that "accuracy on InfiAgent-DABench" means what InfiAgent says it means: the official scorer, the structured answer format, the published evaluation protocol. Anything else is, at best, "I built an agent that scored N% on a benchmark I made up, which happens to share a name with InfiAgent-DABench". And you can't write that on a resume.
+
+The substring scorer would have given me a number. It would have given me a *bigger* number than the real scorer, almost certainly, because every model output that mentioned the right digits anywhere would have counted. That number would have been a lie. Not a deliberate one, but a lie I would not have been able to defend if anyone asked the next question.
+
+## What I did instead
+
+I copied `eval_closed_form.py` into the repo verbatim, with a comment pointing to the upstream commit. I rewrote the agent's prompt to insist on the `@name[value]` format and to refuse to emit prose answers. I added a small Phase-0 test that runs the scorer on a known-good and a known-bad answer to make sure my integration wasn't subtly wrong.
+
+The first real eval pass scored *worse* than my mental model predicted. About a third of the failures turned out to be format errors — the model knew the right answer but wrapped it in extra explanation that broke the regex. That was a real, actionable bug: I tightened the prompt and a chunk of those came back. The remaining failures were genuinely wrong answers, which is what I wanted to be looking at all along.
+
+If I'd shipped the substring scorer, every one of those format errors would have silently passed (the digits were in there somewhere), my number would have been ten points higher, and I'd have learned nothing about how to make the agent better.
+
+## The principle
+
+The five-minute version of an evaluator is almost always wrong in the direction of looking good. That's not a coincidence. A scorer designed to be lenient is one that overcounts; a scorer designed to be strict has to encode the actual structure of correctness, which is exactly the work you're trying to skip.
+
+If a benchmark has an official scorer, use it. Vendor a copy if you have to. If a benchmark doesn't have one, the right move is to *write the scorer first* — before the agent, before the prompt, before anything — because the scorer is the only place "right" is defined. Everything downstream is fitting a model to a target. If the target is wrong, the fit is wrong, and the number you put on your resume is wrong.
+
+I'm glad I didn't ship the substring scorer. I'm not glad I almost did.

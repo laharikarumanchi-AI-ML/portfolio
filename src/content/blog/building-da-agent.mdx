@@ -1,0 +1,68 @@
+---
+title: "Building a Data Analysis Agent from Scratch"
+description: "Lessons from building a code-as-action data-analysis agent against InfiAgent-DABench — including the rate-limit and sandbox-boundary surprises."
+publishedAt: 2026-05-27
+draft: false
+---
+
+I spent the last few weeks building a data-analysis agent — the kind of thing where you point it at a CSV, ask "what's the median tenure of customers who churned in Q3", and it figures out the answer. The end result is a code-as-action agent that runs against a real benchmark (InfiAgent-DABench) and scores 75% on a 9-task pilot. That headline number is the easy part to write. The actually interesting part is the pile of mistakes underneath it.
+
+## Why code-as-action, not classic ReAct
+
+The default move when you sit down to build a tool-using agent is ReAct: give the model a fixed menu of tools (`pandas_read_csv`, `pandas_groupby`, `pandas_plot`, ...) and let it pick one per turn. It works, but every interesting analysis question explodes into a dozen turns, and each turn is one round-trip of latency and tokens. The model also gets penned in by the toolbox — the moment you want to do a `df.merge()` you didn't anticipate, you're either bolting on another tool or watching the agent fail.
+
+Code-as-action inverts the loop. The model writes a Python snippet, the snippet executes in a live Jupyter kernel, and the resulting stdout, exceptions, and figures all come back as the next observation. One turn can do a `read_csv → clean → groupby → plot`, in the same shape a human analyst would write it. The toolbox is *the Python ecosystem*, which is the toolbox you actually want.
+
+The catch is that you now own a sandbox. Which brings me to the next batch of mistakes.
+
+## The Jupyter sandbox surprises
+
+I built the executor on top of `jupyter_client.KernelManager`, expecting a fairly mechanical wrapper. Three things bit me.
+
+**`wait_for_ready` is not optional, and the symptom is silent.** The first time I sent a cell to a freshly-started kernel, the kernel just... didn't respond. No error, no timeout — the IOPub channel hadn't been hooked up yet because the kernel wasn't fully booted. Calling `kc.wait_for_ready()` before the first `execute` fixed it. It's the kind of thing the docs mention in a footnote and you only believe after you've spent an evening on it.
+
+**Per-message timeouts will cut your cells in half.** My first timeout implementation used `get_msg(timeout=30)` — thirty seconds per message. The trouble is that a long-running cell emits *many* messages, and each one resets the clock. So a cell that's going to take 90 seconds total looks fine for the first message and then dies in the middle when the kernel goes quiet between display events. The fix is a deadline-based loop: compute `deadline = time.monotonic() + timeout` once, and shrink the per-`get_msg` timeout as the deadline approaches. That way "30 seconds total" actually means 30 seconds total.
+
+**Matplotlib's default backend silently eats your figures.** I had the executor capturing `display_data` messages out of IOPub so the model could "see" plots as base64 PNGs. It worked for `df.head()`, it worked for `print(stuff)`, and then any time the agent called `df.plot()` — nothing. No image, no error. The default matplotlib backend on a headless kernel falls back to something that doesn't push image data through IOPub at all. Setting `matplotlib.use('Agg')` inside the kernel's startup script fixed it: every figure now reliably shows up as `image/png` in the display data, ready to feed back.
+
+## Eval methodology: trust the official scorer
+
+The temptation when writing your own benchmark harness is to write your own scorer too — "the gold answer is `0.83`, the model said `0.83`, ship it". I get into the substring-scorer trap in a separate post, so I'll be brief here: don't.
+
+InfiAgent-DABench ships with structured answers and an official scorer. The dataset has a quirk I almost missed: questions are in `da-dev-questions.jsonl` and labels are in `da-dev-labels.jsonl`, and you join them by `id`. The label entry tells the agent exactly what answer slots to fill, with a `@name[value]` format the scorer's regex extracts:
+
+```text
+@churn_rate[0.265] @top_segment[month-to-month]
+```
+
+The scorer (`eval_closed_form.py`) parses those slot values, checks them against the gold schema (with type coercion and tolerance for floats), and gives credit only for exact matches. Format errors — wrong slot name, missing brackets, extra text — count as wrong, which is correct: an answer the downstream pipeline can't parse is not a right answer.
+
+I copied `eval_closed_form.py` into my repo verbatim rather than importing from upstream. The upstream package isn't on PyPI in a clean way, and pinning a vendored copy means my eval numbers stay reproducible even if the upstream repo moves.
+
+## What broke in production
+
+The first time I tried to run the full 257-task benchmark, I got rate-limited inside the first ten tasks.
+
+**Groq, 12K tokens per minute.** A code-as-action agent on a non-trivial pandas question can chew through 4–6K tokens per turn (the kernel output is in the prompt now, remember). Two consecutive turns and you're over the per-minute budget. The retry-after header gives you the wait time, but a naïve "sleep and retry" still takes forever when every task wants two waits.
+
+**Gemini-2.0-Flash, 15 requests per minute.** Same problem, different axis. Even if your tokens are small, the request count adds up fast — and a sequential eval is exactly the workload that maximises RPM consumption.
+
+**The Gemini key in the URL.** This one I want to call out specifically because it surprised me and it's the kind of thing that ends up in a public traceback. Google's REST endpoint for Gemini takes the API key as a `?key=...` query parameter. When a request fails — say, an HTTP 429 — the default `requests` exception serialisation includes the full URL. Which means your API key ends up in the agent's trace log, in the error output, and potentially in the next prompt to the model. I scrubbed `?key=` from any URL before logging and switched to passing the key via header where the API allowed it.
+
+## Lessons
+
+The big one — the one that's worth a section on its own — is **treat free-tier rate limits as a design constraint, not an inconvenience**. When I started, I treated them as something to "deal with later". Then "later" arrived and I spent two days bolting on a provider abstraction, throttling layer, and Plan-B Gemini path because Groq's TPM ceiling was going to make a 257-task eval take a week. If I'd budgeted for it at the start, I'd have written the eval harness with the throttler in mind and skipped the rewrite.
+
+Concretely, that means:
+
+- A throttle that knows about both **TPM** and **RPM**, because they bite at different points.
+- A provider switch (`--provider groq|gemini`) baked in from the first request, not added after the first failure.
+- A pilot subset (5–10 tasks) you can run end-to-end in under five minutes, *before* you commit to the full benchmark — so you find the bugs that scale linearly with task count without paying for the full run.
+
+The smaller lesson, but one I keep coming back to: **the sandbox boundary is where the bugs live**. Wait-for-ready, deadline timeouts, the matplotlib backend — these are all the same shape of bug, where you assume a clean abstraction (the kernel) and reality leaks through. Build the boundary defensively, log everything that crosses it, and write a failing test for each leak the first time you hit one.
+
+## What's next
+
+The pilot was 9 of 80 subset tasks; the next run is the full 257-task benchmark with proper throttling so I can report a real number, not a pilot number. After that I want to do a small ablation: code-as-action vs ReAct-style tool calling on the same questions, same model, same scorer. The current 75% says "the approach works on a tiny slice"; the next number needs to say "the approach works at scale".
+
+If you're poking at agent eval and run into something familiar here, I'd love to hear about it.
