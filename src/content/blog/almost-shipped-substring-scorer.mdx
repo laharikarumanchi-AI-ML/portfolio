@@ -32,7 +32,7 @@ Reading it, the picture got more interesting. The benchmark doesn't expect a fre
 @median_tenure[24.0] @churn_segment[month-to-month]
 ```
 
-The scorer extracts each `@name[value]` pair with a regex, looks up the expected schema for that question (which says "median_tenure should be a float, churn_segment should be one of {month-to-month, one-year, two-year}"), and grades each slot independently. Floats get a tolerance. Strings get coerced and compared case-insensitively. Missing slots count as wrong. Extra slots are ignored.
+The scorer extracts each `@name[value]` pair with a regex, looks up the expected schema for that question (which says "median_tenure should be a float, churn_segment should be one of \{month-to-month, one-year, two-year\}"), and grades each slot independently. Floats get a tolerance. Strings get coerced and compared case-insensitively. Missing slots count as wrong. Extra slots are ignored.
 
 My one-line substring scorer would have been wrong in at least four different ways for the same dataset:
 

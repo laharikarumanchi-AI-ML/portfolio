@@ -1,0 +1,17 @@
+---
+import BaseLayout from './BaseLayout.astro';
+import type { CollectionEntry } from 'astro:content';
+interface Props { entry: CollectionEntry<'blog'>; }
+const { entry } = Astro.props;
+const date = entry.data.publishedAt.toISOString().slice(0, 10);
+---
+<BaseLayout title={`${entry.data.title} — Lahari Karumanchi`}
+            description={entry.data.description}>
+  <p style="font-size:0.85rem; color:var(--muted); margin-bottom:0;">
+    <a href="/blog">← All posts</a>
+  </p>
+  <h1 style="margin-top:0.5rem;">{entry.data.title}</h1>
+  <p style="color:var(--muted); margin-top:0.5rem;">{date}</p>
+  <hr/>
+  <slot />
+</BaseLayout>
