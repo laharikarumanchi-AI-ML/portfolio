@@ -1,0 +1,12 @@
+---
+import type { CollectionEntry } from 'astro:content';
+interface Props { entry: CollectionEntry<'blog'>; }
+const { entry } = Astro.props;
+const url = `/blog/${entry.id.replace(/\.mdx?$/, '')}`;
+const date = entry.data.publishedAt.toISOString().slice(0, 10);
+---
+<article>
+  <h4 style="margin-bottom:0.25rem;"><a href={url}>{entry.data.title}</a></h4>
+  <p style="margin:0.15rem 0; font-size:0.95rem; color:var(--muted);">{entry.data.description}</p>
+  <p style="margin:0; font-size:0.8rem; color:var(--muted);">{date}</p>
+</article>
