@@ -1,0 +1,35 @@
+---
+title: "Document Q&A Assistant (RAG)"
+oneLiner: "A retrieval-augmented chatbot that answers questions over a set of PDFs, with source citations."
+headlineNumber: "Reduced hallucinations vs plain LLM by returning source citations"
+techStack: ["Python", "LangChain", "FAISS", "OpenAI API", "Streamlit"]
+year: 2025
+featured: false
+order: 2
+---
+
+## Problem
+
+Asking a general-purpose LLM to summarise a stack of PDFs is a recipe for confident-sounding fabrication. The model will gladly answer a question whose answer isn't in the documents at all. The goal was a Q&A assistant where every claim is grounded in a passage you can click through to.
+
+## Approach
+
+Project at a glance:
+
+- PDFs chunked with a recursive character splitter; chunk size tuned for the embedding model's context window.
+- Embeddings stored in a local **FAISS** index for fast cosine-similarity retrieval.
+- Top-k passages stuffed into the prompt as context, with explicit "answer only from the context" instructions.
+- Every response surfaces the source chunk and page number so the user can verify.
+- Streamlit UI for upload and chat.
+
+## Results
+
+Side-by-side with a plain LLM prompted on the same PDFs, the RAG version produced noticeably fewer fabricated facts on out-of-document questions — it would say "I can't find that in the provided documents" instead of inventing an answer. Citations made the failure modes inspectable instead of invisible.
+
+## What I'd do differently
+
+I'd add a re-ranker on top of vector search (top-50 → top-5 with a cross-encoder), and split out chunking by document type rather than a single global splitter — academic PDFs and slide decks have very different structure.
+
+## Links
+
+- GitHub: <a href="https://github.com/laharikarumanchi-AI-ML">github.com/laharikarumanchi-AI-ML</a>

@@ -1,0 +1,34 @@
+---
+title: "Movie Recommendation Engine"
+oneLiner: "Collaborative filtering on MovieLens, served via a FastAPI endpoint."
+headlineNumber: "Real-time recommendation API"
+techStack: ["Python", "FastAPI", "pandas"]
+year: 2024
+featured: false
+order: 5
+---
+
+## Problem
+
+Recommender systems are one of the cleanest ways to learn the gap between "trained a model in a notebook" and "served a model someone can actually call". The goal was the full path: build a collaborative-filtering recommender on MovieLens, then put it behind an HTTP endpoint with predictable latency.
+
+## Approach
+
+Project at a glance:
+
+- MovieLens ratings dataset, user-item interactions modelled with collaborative filtering.
+- Similarity computed offline; lookups served from in-memory structures at request time so the API stayed snappy.
+- **FastAPI** endpoint exposing `/recommend?user_id=...` returning ranked movie IDs with scores.
+- Pydantic models for request/response validation so the contract is self-documenting.
+
+## Results
+
+A working recommendation API that returned ranked suggestions for a given user in real time — small dataset, but the full notebook-to-endpoint loop was the point. Pydantic schemas meant the API surface stayed honest without extra glue code.
+
+## What I'd do differently
+
+I'd swap raw similarity for a matrix-factorisation model (e.g. ALS or a small neural CF) and add a cold-start fallback for users with no rating history — popularity-by-genre would already meaningfully outperform "no recommendation at all".
+
+## Links
+
+- GitHub: <a href="https://github.com/laharikarumanchi-AI-ML">github.com/laharikarumanchi-AI-ML</a>

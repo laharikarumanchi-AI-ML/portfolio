@@ -1,0 +1,34 @@
+---
+title: "Multi-Tool AI Agent"
+oneLiner: "A ReAct-style autonomous agent that decomposes user queries into steps and selects the right tool (web search, calculator, custom functions) for each."
+headlineNumber: "Multi-step tool reasoning with retry/error handling"
+techStack: ["Python", "LangChain"]
+year: 2025
+featured: false
+order: 3
+---
+
+## Problem
+
+A lot of useful questions don't fit in a single tool call. "What's the population of the city the latest Nobel literature winner was born in, divided by the GDP per capita of that country?" needs a search, then another search, then a calculator. I wanted to see what it took to make an agent that could chain those steps reliably, including when one of the tools fails or returns nonsense.
+
+## Approach
+
+Project at a glance:
+
+- LangChain's ReAct agent scaffold with a custom toolbox (web search, calculator, a few domain-specific functions).
+- Explicit prompt scaffolding for the thought / action / observation cycle so the trace is auditable.
+- Retry-with-reflection wrapper around tool calls: if a tool errors or returns an empty result, the agent gets the error back as an observation and decides whether to retry, switch tools, or give up.
+- Step cap to prevent runaway loops on impossible questions.
+
+## Results
+
+The agent could reliably answer chained questions that single-shot LLMs got wrong, and when it failed, the failure was inspectable in the reasoning trace rather than a silent fabrication. The retry-on-error wrapper meaningfully reduced the number of runs that died on a transient search-API blip.
+
+## What I'd do differently
+
+ReAct's `Thought:` scaffolding eats tokens fast on long chains. I'd compare against a function-calling-native loop — the same agent semantics but driven by structured tool calls instead of free-form reasoning text — to see how much of the framework I actually need.
+
+## Links
+
+- GitHub: <a href="https://github.com/laharikarumanchi-AI-ML">github.com/laharikarumanchi-AI-ML</a>

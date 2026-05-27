@@ -1,0 +1,37 @@
+---
+title: "Customer Churn Prediction Model"
+oneLiner: "An end-to-end churn classifier on a Telco dataset using XGBoost, with SHAP for feature attribution."
+headlineNumber: "0.83 ROC-AUC"
+techStack: ["Python", "XGBoost", "SHAP", "scikit-learn"]
+year: 2025
+featured: false
+order: 4
+---
+
+## Problem
+
+Churn is one of the canonical applied-ML problems: imbalanced classes, mixed feature types, and a downstream user (the retention team) who cares as much about *why* a customer is predicted to churn as about the prediction itself. The goal was a model that hit a respectable ROC-AUC and produced explanations the business could act on.
+
+## Approach
+
+Project at a glance:
+
+- Telco customer churn dataset, with standard preprocessing: one-hot for categoricals, scaling for numerics, sensible imputation.
+- **XGBoost** classifier as the primary model.
+- Class imbalance handled with `scale_pos_weight` set from the empirical ratio rather than naive oversampling.
+- Evaluation on a held-out test set with ROC-AUC, PR-AUC, and confusion matrices — not just accuracy, which is misleading at this base rate.
+- **SHAP** values for global and per-customer feature attribution.
+
+## Results
+
+- **0.83 ROC-AUC** on the held-out test set.
+- SHAP analysis identified **contract type** (month-to-month customers churn the most) and **tenure** (short-tenure customers churn the most) as the dominant drivers — both intuitive and actionable for retention campaigns.
+- PR-AUC and confusion matrices gave a clearer picture than accuracy alone of where the model was confident and where it was hedging.
+
+## What I'd do differently
+
+I'd run a calibration check (reliability diagram + Brier score) — for retention decisions the *probability* matters as much as the rank, and untreated XGBoost outputs aren't well-calibrated by default. Isotonic or Platt scaling on a held-out slice would be a one-evening addition with real business value.
+
+## Links
+
+- GitHub: <a href="https://github.com/laharikarumanchi-AI-ML">github.com/laharikarumanchi-AI-ML</a>
