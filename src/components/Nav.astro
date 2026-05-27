@@ -1,0 +1,14 @@
+---
+const pages = [
+  { href: '/', label: 'Lahari Karumanchi' },
+  { href: '/#projects', label: 'Projects' },
+  { href: '/blog', label: 'Blog' },
+  { href: '/about', label: 'About' },
+  { href: '/resume.pdf', label: 'Résumé' },
+];
+---
+<nav style="display:flex; gap:1.5rem; padding-block:1.5rem; font-family:var(--font-serif); border-bottom:1px solid var(--rule);">
+  {pages.map((p, i) => (
+    <a href={p.href} style={i === 0 ? 'font-weight:600; margin-right:auto;' : ''}>{p.label}</a>
+  ))}
+</nav>
