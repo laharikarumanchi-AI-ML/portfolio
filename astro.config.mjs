@@ -7,6 +7,6 @@ import sitemap from '@astrojs/sitemap';
 
 // https://astro.build/config
 export default defineConfig({
-  site: 'https://lahari-portfolio.vercel.app',
+  site: 'https://laharikarumanchi.vercel.app',
   integrations: [mdx(), sitemap()]
 });
