@@ -1,0 +1,202 @@
+---
+title: "Design LinkedIn: A Focused Look at Feed Generation"
+oneLiner: "A system-design exercise: how do you build LinkedIn's home feed at billion-user scale, and which fan-out strategy is actually right?"
+headlineNumber: "Fan-out trade-off · 1B users · <200ms feed reads"
+techStack: ["System design", "Distributed systems", "Kafka", "Sharded SQL", "Redis"]
+year: 2026
+featured: false
+order: 6
+---
+
+{/* ──────────────────────────────────────────────────────────────────────────
+  CONTRIBUTION SLOT 1 — "Why this problem"
+  Lahari: write 3–4 lines in your voice. The honest opener to a system design
+  is more compelling than a generic "LinkedIn is a social platform..." intro.
+  Possible angles:
+    • Why feed generation specifically (vs search, messaging, etc.) caught
+      your interest — what about it felt like a real trade-off, not a
+      textbook problem?
+    • A personal observation from using LinkedIn that surfaced a "huh, how
+      do they actually do this?" moment.
+    • The interview-prep framing — being able to *defend* a fan-out choice
+      is the differentiator vs. just naming the patterns.
+  Delete this comment block when you fill the section.
+  ────────────────────────────────────────────────────────────────────────── */}
+
+## Why this problem
+
+> **TODO** — replace this paragraph with your own opener.
+
+## Problem framing
+
+You're designing the **home feed** for LinkedIn: when a user opens the app, they see a chronological-ish stream of posts from people in their network. The hard part is *not* showing the posts — it's deciding **where the per-user feed gets assembled** and **when**.
+
+Two classic poles:
+
+- **Fan-out-on-write (push):** When Alice posts, immediately push her post into the feed-inbox of every connection. Reads are cheap (one lookup), writes are expensive (multiplied by connection count).
+- **Fan-out-on-read (pull):** When Bob opens his feed, fetch posts from each of his connections and merge them. Writes are cheap (one row), reads are expensive (many fetches + a merge).
+
+The real LinkedIn (and Twitter, and Facebook) ship **hybrids**. The interesting question is: where does the threshold go, and why?
+
+## Requirements
+
+**Functional**
+
+- Users can post text + image; posts are visible to their direct connections (1st-degree) and optionally their network (2nd-degree).
+- Home feed shows the most recent ~50 posts from the user's network, ordered chronologically (ranking out of scope here).
+- Users can connect / unconnect; the feed reflects the current connection set with eventual consistency (a few seconds is fine).
+
+**Non-functional**
+
+| Constraint | Target |
+|---|---|
+| Users | ~1B registered, ~300M MAU |
+| Median connections / user | ~400 (long tail to ~30k for influencers) |
+| Home feed read latency | p99 < 200 ms |
+| Post-write to feed visibility | < 30 seconds for non-celebrity authors |
+| Read:write ratio on feed | ~100:1 (much more reading than posting) |
+| Consistency | Eventual is acceptable for the feed itself; strong for the post record |
+
+## Capacity estimation
+
+Back-of-envelope:
+
+| Quantity | Estimate | Reasoning |
+|---|---|---|
+| Posts per day | 5 M | ~1.7% of MAU post on a given day, some post 2× |
+| Fan-out writes per day (push, naive) | 2 B | 5M × 400 avg connections |
+| Storage growth (feed entries, push model) | ~80 GB/day | 2B × 40-byte index entries |
+| Feed reads per day | 600 M | 300M MAU × ~2 feed loads each |
+| Peak feed-read QPS | ~15 k | with 5× peak-to-average ratio |
+
+The 80 GB/day write amplification under a naive push model is the **first reason** you don't push to everyone.
+
+## High-level architecture
+
+<img src="/diagrams/linkedin-arch.svg" alt="Architecture diagram: clients → CDN/API Gateway → Post/Connection/Feed/User/Search services → Feed and Profile caches → Kafka queue + Fan-Out Worker → PostDB, Connection Graph, FeedDB, UserDB, Object Store" style="width:100%; max-width:none; margin:1.5rem -2rem; background:#fff; padding:1rem; border:1px solid var(--rule);" />
+
+Layers from top to bottom:
+
+- **Edge** — clients hit a CDN for static assets and an API gateway (auth, rate-limiting, routing) for everything else.
+- **Services** — stateless, horizontally scalable. The five shown are the minimum to demo the feed path; messaging / notifications / job search are real services elided here.
+- **Async** — a Kafka topic (`post-created`) decouples post writes from fan-out. A dedicated worker pool drains it.
+- **Storage** — separate datastores by access pattern: `PostDB` (sharded SQL or Cassandra, post records), `Connection Graph` (graph DB or sharded SQL, edges + 2nd-degree precomputes), `FeedDB` (per-user materialized inbox — *only for non-celebrities*; see deep dive), `UserDB`, `Object Store` (S3 / GCS for images).
+- **Caching** — `Feed Cache` (Redis, hot users' assembled feeds, 60-second TTL); `Profile Cache` (Redis, profile snippets used in feed rendering).
+
+## Data model (sketch)
+
+```sql
+-- Posts
+posts(post_id PK, author_id, body, image_url?, created_at, visibility)
+-- Sharded by author_id; secondary index on author_id + created_at.
+
+-- Connections (symmetric)
+connections(user_a, user_b, status, created_at, PRIMARY KEY (user_a, user_b))
+-- Stored bidirectionally for O(1) "who follows me" reads.
+
+-- FeedDB: materialized inbox per user (push targets only)
+feed_entries(user_id, post_id, author_id, created_at,
+             PRIMARY KEY (user_id, created_at DESC, post_id))
+-- Sharded by user_id; rolling window — drop entries older than 7 days.
+```
+
+The `FeedDB` schema is the crux. We only populate it for users whose authors are *under* the celebrity threshold — the deep dive explains why.
+
+## Deep dive: feed generation
+
+This is the part that determines whether your design scales or quietly explodes.
+
+### The two extremes
+
+| | **Fan-out on write** | **Fan-out on read** |
+|---|---|---|
+| When the work happens | At post time | At feed-load time |
+| Write cost (per post) | O(followers) — could be millions | O(1) |
+| Read cost (per feed load) | O(1) lookup in pre-built inbox | O(connections) fetches + merge |
+| Storage cost | High (each post duplicated per follower) | Low |
+| Latency of feed read | ~10 ms | ~200–500 ms |
+| Bad at | Celebrities (write amplification) | Active feed readers (read amplification) |
+| Good at | Read-heavy workloads with bounded follower counts | Write-heavy workloads with sporadic readers |
+
+LinkedIn's read:write is ~100:1, which biases the choice strongly toward push. But the **influencer problem** breaks the simple push model: an account with 1 M followers triggers 1 M writes per post, often in a thundering herd. You also waste those writes on inactive accounts who never read.
+
+### The hybrid
+
+The pattern that ships at every social-feed-scale company is roughly the same:
+
+1. **Push (fan-out on write) for the long tail of normal users.** When Alice (400 connections) posts, the fan-out worker writes 400 entries to `FeedDB`. Reads for her connections are O(1).
+2. **Pull (fan-out on read) for celebrities.** Define a `celebrity_threshold` (e.g., > 50k followers). For accounts above it, *do not* push. Instead, when Bob opens his feed, the Feed Service queries `FeedDB` for the pushed posts AND issues a separate query for "recent posts by any celebrity I follow" (a small number), then merges in memory.
+3. **Cap the inbox.** A user's `FeedDB` rows are pruned to the last 7 days or last 1000 entries, whichever is smaller. Old posts re-enter via pull only.
+4. **Lazy fan-out for cold users.** If a user hasn't opened the app in 30 days, skip the push for them entirely. Re-warm their inbox on next login.
+
+This eliminates the write amplification at the celebrity tail while keeping the median feed read cheap.
+
+{/* ──────────────────────────────────────────────────────────────────────────
+  CONTRIBUTION SLOT 2 — "Your chosen strategy + reasoning"
+  Lahari: this is THE section recruiters read carefully. Write 10–15 lines.
+  Make a defensible call. Some questions to answer in prose (not a list):
+    • Where would you set the celebrity threshold, and why? (e.g.,
+      "I'd start at 50k followers because at our distribution that's
+      roughly the top 0.1% of accounts, which generates ~30% of post
+      reach but only 0.1% of post volume — pulling for them costs us a
+      tiny extra read latency in exchange for cutting write amplification
+      by ~30%.")
+    • What happens to a user whose connections are mostly celebrities?
+      (Their feed is mostly pull-assembled — is that acceptable latency-wise?)
+    • How do you handle the threshold *changing*? (A user crosses 50k
+      followers — do you delete their pushed entries from inboxes?)
+    • Would you do the same thing for posts that go viral *after* posting
+      (e.g., a non-celebrity's post that explodes in comments)?
+
+  The number you pick matters less than the reasoning. Bad: "I'd use a hybrid
+  because hybrids are best." Good: "I'd pick threshold X, accepting trade-off
+  Y, and revisit if metric Z deteriorates."
+  ────────────────────────────────────────────────────────────────────────── */}
+
+### My choice
+
+> **TODO** — write 10–15 lines: which threshold you'd set, what trade-offs you accept, and what you'd watch in production to know if you were wrong.
+
+### Failure modes worth naming
+
+- **Fan-out worker backlog.** A celebrity who's *just under* the threshold posts → 49k writes hit the worker in seconds. Queue depth spikes, fan-out lag grows. Mitigation: scale workers on Kafka lag; partition by author shard so one slow author doesn't block others.
+- **Connection graph staleness.** Bob disconnects from Alice; her post still arrives in his inbox for ~5 seconds. Acceptable for a feed; the post simply doesn't appear on his next refresh.
+- **Hot feed cache invalidation.** A trending post in a cached feed causes thundering herd of cache misses. Mitigation: stale-while-revalidate; serve last-known cache for 1s while a single re-fetch happens.
+
+## What this design deliberately doesn't cover
+
+- **Ranking.** Real LinkedIn doesn't show strictly chronological feeds — there's a personalized ranker (recency, engagement prediction, network strength) layered on top. That's a deep dive in its own right.
+- **Search.** Inverted indexes for people / jobs / companies, autocomplete, relevance — out of scope.
+- **Messaging.** Real-time presence + WebSocket fan-out — different architecture entirely.
+- **Notifications.** The notification queue is shown in the diagram but unwired here.
+- **Geographic distribution.** Multi-region, conflict resolution, regional caches — assumed away with "we're in one region."
+
+Each of these is interview-deep on its own; trying to cover them all is the textbook trap.
+
+{/* ──────────────────────────────────────────────────────────────────────────
+  CONTRIBUTION SLOT 3 — "What I'd revisit"
+  Lahari: 5–8 lines in your voice. This section is what separates "I read a
+  textbook" from "I'd actually build this." Frame as: what data would I need
+  to validate the design once it's in production, and what would change my
+  mind?
+
+  Possible angles:
+    • The celebrity threshold (50k or wherever you set it) is a guess; what
+      production metric would you measure to tune it?
+    • "Feed read latency p99 < 200 ms" — under what conditions would you
+      accept relaxing that vs. throwing more cache at the problem?
+    • If you saw the fan-out worker chronically backed up, would you split
+      it (one worker pool per priority tier) or just scale horizontally?
+    • What's the simplest experiment you could run *before* shipping that
+      would validate the hybrid is actually saving writes the way you think?
+  ────────────────────────────────────────────────────────────────────────── */}
+
+## What I'd revisit with real data
+
+> **TODO** — 5–8 lines on what production telemetry would make me change this design.
+
+---
+
+## Acknowledgments
+
+Thinking shaped by reading the **Designing Data-Intensive Applications** chapter on derived data, and various engineering blog posts from Meta, Twitter (pre-X), and LinkedIn itself. The mistakes in the design are entirely my own.

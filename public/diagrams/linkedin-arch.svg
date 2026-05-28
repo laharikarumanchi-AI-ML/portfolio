@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 620" font-family="-apple-system, BlinkMacSystemFont, 'Inter', sans-serif" font-size="13">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#1a1a1a"/>
+    </marker>
+    <style>
+      .box     { fill:#fafaf7; stroke:#1a1a1a; stroke-width:1.5; }
+      .box-q   { fill:#fdf6e3; stroke:#1a1a1a; stroke-width:1.5; }
+      .box-db  { fill:#eef4fb; stroke:#0a5dae; stroke-width:1.5; }
+      .box-cache { fill:#f4eaf6; stroke:#6b3aa0; stroke-width:1.5; }
+      .label   { fill:#1a1a1a; font-weight:600; }
+      .sub     { fill:#555; font-size:11px; }
+      .arr     { stroke:#1a1a1a; stroke-width:1.3; fill:none; marker-end:url(#arrow); }
+      .arr-dash { stroke:#555; stroke-width:1.1; fill:none; stroke-dasharray:4 3; marker-end:url(#arrow); }
+      .layer   { fill:#888; font-size:11px; font-style:italic; }
+    </style>
+  </defs>
+
+  <!-- Layer labels (left margin) -->
+  <text x="20" y="60"  class="layer">Edge</text>
+  <text x="20" y="155" class="layer">Services</text>
+  <text x="20" y="310" class="layer">Async</text>
+  <text x="20" y="430" class="layer">Storage</text>
+
+  <!-- Edge layer -->
+  <rect x="120" y="40" width="180" height="50" rx="4" class="box"/>
+  <text x="210" y="62" text-anchor="middle" class="label">Mobile / Web Clients</text>
+  <text x="210" y="78" text-anchor="middle" class="sub">REST + WebSocket</text>
+
+  <rect x="400" y="40" width="180" height="50" rx="4" class="box"/>
+  <text x="490" y="62" text-anchor="middle" class="label">CDN</text>
+  <text x="490" y="78" text-anchor="middle" class="sub">static + images</text>
+
+  <rect x="680" y="40" width="180" height="50" rx="4" class="box"/>
+  <text x="770" y="62" text-anchor="middle" class="label">API Gateway / LB</text>
+  <text x="770" y="78" text-anchor="middle" class="sub">auth, rate-limit, routing</text>
+
+  <!-- Services layer (5 boxes evenly) -->
+  <rect x="40"  y="140" width="160" height="60" rx="4" class="box"/>
+  <text x="120" y="164" text-anchor="middle" class="label">Post Service</text>
+  <text x="120" y="180" text-anchor="middle" class="sub">create / edit / delete</text>
+  <text x="120" y="194" text-anchor="middle" class="sub">writes to PostDB</text>
+
+  <rect x="220" y="140" width="160" height="60" rx="4" class="box"/>
+  <text x="300" y="164" text-anchor="middle" class="label">Connection Svc</text>
+  <text x="300" y="180" text-anchor="middle" class="sub">connect / unconnect</text>
+  <text x="300" y="194" text-anchor="middle" class="sub">graph queries</text>
+
+  <rect x="400" y="140" width="160" height="60" rx="4" class="box"/>
+  <text x="480" y="164" text-anchor="middle" class="label">Feed Service</text>
+  <text x="480" y="180" text-anchor="middle" class="sub">read home feed</text>
+  <text x="480" y="194" text-anchor="middle" class="sub">(see deep dive)</text>
+
+  <rect x="580" y="140" width="160" height="60" rx="4" class="box"/>
+  <text x="660" y="164" text-anchor="middle" class="label">User Service</text>
+  <text x="660" y="180" text-anchor="middle" class="sub">profile / auth</text>
+
+  <rect x="760" y="140" width="160" height="60" rx="4" class="box"/>
+  <text x="840" y="164" text-anchor="middle" class="label">Search Service</text>
+  <text x="840" y="180" text-anchor="middle" class="sub">people / jobs</text>
+  <text x="840" y="194" text-anchor="middle" class="sub">(out of scope)</text>
+
+  <!-- Cache layer (small, sits between services and storage) -->
+  <rect x="320" y="240" width="140" height="40" rx="4" class="box-cache"/>
+  <text x="390" y="265" text-anchor="middle" class="label">Feed Cache</text>
+
+  <rect x="500" y="240" width="140" height="40" rx="4" class="box-cache"/>
+  <text x="570" y="265" text-anchor="middle" class="label">Profile Cache</text>
+
+  <!-- Async layer -->
+  <rect x="120" y="320" width="200" height="50" rx="4" class="box-q"/>
+  <text x="220" y="343" text-anchor="middle" class="label">Post-Created Queue</text>
+  <text x="220" y="359" text-anchor="middle" class="sub">(Kafka)</text>
+
+  <rect x="400" y="320" width="200" height="50" rx="4" class="box"/>
+  <text x="500" y="343" text-anchor="middle" class="label">Fan-Out Worker</text>
+  <text x="500" y="359" text-anchor="middle" class="sub">writes to FeedDB on new post</text>
+
+  <rect x="680" y="320" width="180" height="50" rx="4" class="box-q"/>
+  <text x="770" y="343" text-anchor="middle" class="label">Notification Queue</text>
+  <text x="770" y="359" text-anchor="middle" class="sub">(out of scope)</text>
+
+  <!-- Storage layer -->
+  <rect x="60"  y="420" width="140" height="60" rx="4" class="box-db"/>
+  <text x="130" y="445" text-anchor="middle" class="label">PostDB</text>
+  <text x="130" y="461" text-anchor="middle" class="sub">posts, comments</text>
+  <text x="130" y="475" text-anchor="middle" class="sub">sharded by user_id</text>
+
+  <rect x="240" y="420" width="160" height="60" rx="4" class="box-db"/>
+  <text x="320" y="445" text-anchor="middle" class="label">Connection Graph</text>
+  <text x="320" y="461" text-anchor="middle" class="sub">edges + 2nd-degree</text>
+  <text x="320" y="475" text-anchor="middle" class="sub">(graph DB or sharded SQL)</text>
+
+  <rect x="440" y="420" width="160" height="60" rx="4" class="box-db"/>
+  <text x="520" y="445" text-anchor="middle" class="label">FeedDB</text>
+  <text x="520" y="461" text-anchor="middle" class="sub">per-user materialized inbox</text>
+  <text x="520" y="475" text-anchor="middle" class="sub">(only for non-celebrity users)</text>
+
+  <rect x="640" y="420" width="140" height="60" rx="4" class="box-db"/>
+  <text x="710" y="445" text-anchor="middle" class="label">UserDB</text>
+  <text x="710" y="461" text-anchor="middle" class="sub">profiles, auth</text>
+
+  <rect x="820" y="420" width="120" height="60" rx="4" class="box-db"/>
+  <text x="880" y="445" text-anchor="middle" class="label">Object Store</text>
+  <text x="880" y="461" text-anchor="middle" class="sub">images, media</text>
+
+  <!-- Arrows: client -> LB -->
+  <path d="M300,65 L400,65" class="arr"/>
+  <path d="M580,65 L680,65" class="arr"/>
+
+  <!-- LB fans down to services (5 short verticals from a single point) -->
+  <path d="M770,90 L770,110 L120,110 L120,140" class="arr"/>
+  <path d="M770,90 L770,110 L300,110 L300,140" class="arr"/>
+  <path d="M770,90 L770,110 L480,110 L480,140" class="arr"/>
+  <path d="M770,90 L770,110 L660,110 L660,140" class="arr"/>
+  <path d="M770,90 L770,110 L840,110 L840,140" class="arr"/>
+
+  <!-- Services -> caches / storage -->
+  <path d="M120,200 L130,420" class="arr"/>
+  <path d="M300,200 L320,420" class="arr"/>
+  <path d="M660,200 L710,420" class="arr"/>
+
+  <!-- Feed Svc reads from cache, then FeedDB -->
+  <path d="M480,200 L390,240" class="arr"/>
+  <path d="M390,280 L520,420" class="arr-dash"/>
+
+  <!-- User Svc -> Profile Cache -->
+  <path d="M660,200 L570,240" class="arr"/>
+
+  <!-- Post Svc -> Post-Created Queue (the fan-out trigger) -->
+  <path d="M120,200 L220,320" class="arr"/>
+  <text x="160" y="265" class="sub">on new post</text>
+
+  <!-- Queue -> Worker -> FeedDB -->
+  <path d="M320,345 L400,345" class="arr"/>
+  <path d="M500,370 L520,420" class="arr"/>
+  <text x="540" y="395" class="sub">fan-out write</text>
+
+  <!-- Worker reads Connection Graph to know whom to fan out to -->
+  <path d="M450,370 L350,420" class="arr-dash"/>
+  <text x="345" y="395" class="sub">"who follows me?"</text>
+
+  <!-- Title -->
+  <text x="480" y="585" text-anchor="middle" class="label" font-size="14">LinkedIn — high-level architecture (focused on home-feed path)</text>
+  <text x="480" y="603" text-anchor="middle" class="sub">solid = sync request flow · dashed = async / read on demand · color = component type</text>
+</svg>
