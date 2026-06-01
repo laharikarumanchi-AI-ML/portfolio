@@ -4,6 +4,7 @@
   --link: #0a5dae;
   --muted: #555;
   --rule: #d8d8d3;
+  --hover: rgba(26, 26, 26, 0.04);
 
   --font-serif: 'Iowan Old Style', 'Charter', Georgia, serif;
   --font-sans: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
@@ -17,6 +18,9 @@
   --space-3: 1.5rem;
   --space-4: 2.5rem;
   --space-5: 4rem;
+
+  --radius: 4px;
+  --t-fast: 120ms ease-out;
 }
 
 * { box-sizing: border-box; }
@@ -36,9 +40,7 @@ body {
   margin-inline: auto;
 }
 
-main.wide {
-  max-width: var(--wide-width);
-}
+main.wide { max-width: var(--wide-width); }
 
 h1, h2, h3, h4 {
   font-family: var(--font-serif);
@@ -55,8 +57,15 @@ a {
   color: var(--link);
   text-decoration: underline;
   text-underline-offset: 2px;
+  transition: text-decoration-thickness var(--t-fast);
 }
 a:hover { text-decoration-thickness: 2px; }
+
+:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
 
 code, pre {
   font-family: var(--font-mono);
@@ -67,6 +76,7 @@ pre {
   background: #f0f0eb;
   padding: var(--space-2);
   overflow-x: auto;
+  border-radius: var(--radius);
 }
 
 hr {
@@ -76,3 +86,110 @@ hr {
 }
 
 img { max-width: 100%; height: auto; }
+
+/* ───────── Card pattern ─────────
+   Used by ProjectCard + PostCard. A whole-card click target.
+   The whole <article> is wrapped in an <a class="card">; remove the
+   default underline and inherit color so the title visually owns the link. */
+
+a.card {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+  padding: var(--space-2);
+  margin-inline: calc(-1 * var(--space-2));
+  border-radius: var(--radius);
+  transition: background-color var(--t-fast);
+}
+a.card:hover { background-color: var(--hover); }
+a.card:hover .card-title { text-decoration-thickness: 2px; }
+
+.card-title {
+  margin: 0 0 0.25rem 0;
+  color: var(--link);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.card-featured {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+  border: 1px solid var(--rule);
+  padding: var(--space-3);
+  margin-block: var(--space-3);
+  border-radius: var(--radius);
+  background: var(--paper);
+  transition: border-color var(--t-fast), background-color var(--t-fast);
+}
+a.card-featured:hover {
+  border-color: var(--ink);
+  background-color: var(--hover);
+}
+.card-featured .eyebrow {
+  display: inline-block;
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin: 0 0 var(--space-1) 0;
+}
+
+/* ───────── Tech-stack chips ───────── */
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.5rem 0 0 0;
+  padding: 0;
+  list-style: none;
+}
+.chips li {
+  font-size: 0.78rem;
+  line-height: 1;
+  padding: 0.3rem 0.55rem;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--paper);
+}
+
+/* ───────── Responsive nav ───────── */
+
+nav.site-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.75rem 1.25rem;
+  padding-block: var(--space-3);
+  font-family: var(--font-serif);
+  border-bottom: 1px solid var(--rule);
+}
+nav.site-nav .brand {
+  font-weight: 600;
+  flex: 1 1 100%;
+}
+@media (min-width: 560px) {
+  nav.site-nav .brand { flex: 0 0 auto; margin-right: auto; }
+}
+
+/* ───────── Button (used for CTAs like Download résumé) ─────────
+   Classic minimal-academic button: outlined; inverts to ink/paper on hover. */
+
+.button {
+  display: inline-block;
+  padding: 0.5rem 1.05rem;
+  border: 1px solid var(--ink);
+  border-radius: var(--radius);
+  text-decoration: none;
+  color: var(--ink);
+  font-weight: 500;
+  transition: background-color var(--t-fast), color var(--t-fast);
+}
+.button:hover { background: var(--ink); color: var(--paper); text-decoration: none; }
+
+/* ───────── Misc ───────── */
+
+.muted { color: var(--muted); }
+.sm    { font-size: 0.85rem; }

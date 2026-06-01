@@ -11,12 +11,13 @@ const { entry } = Astro.props;
   </p>
   <h1 style="margin-top:0.5rem;">{entry.data.title}</h1>
   <p style="font-size:1.15rem; color:var(--muted); margin-top:0.5rem;">{entry.data.oneLiner}</p>
-  <p style="font-family:var(--font-serif); font-size:1.5rem; margin:1rem 0 2rem;">
+  <p style="font-family:var(--font-serif); font-size:1.5rem; margin:1rem 0 0.75rem;">
     {entry.data.headlineNumber}
   </p>
-  <p style="font-size:0.85rem; color:var(--muted);">
-    {entry.data.techStack.join(' · ')} · {entry.data.year}
-  </p>
+  <ul class="chips" aria-label="Tech stack" style="margin-bottom:0.5rem;">
+    {entry.data.techStack.map(t => <li>{t}</li>)}
+  </ul>
+  <p class="sm muted" style="margin:0.25rem 0 0;">{entry.data.year}</p>
   <hr/>
   <slot />
 </BaseLayout>
