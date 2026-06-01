@@ -12,7 +12,7 @@ const url = `/projects/${entry.id.replace(/\.mdx?$/, '')}`;
     <span class="eyebrow">Featured project</span>
     <h3 class="card-title">{entry.data.title}</h3>
     <p class="muted" style="font-size:1.05rem; margin:0.25rem 0 0.75rem;">{entry.data.oneLiner}</p>
-    <p style="font-family:var(--font-serif); font-size:1.35rem; margin:0.5rem 0;">{entry.data.headlineNumber}</p>
+    <p class="headline-number">{entry.data.headlineNumber}</p>
     <ul class="chips" aria-label="Tech stack">
       {entry.data.techStack.map(t => <li>{t}</li>)}
     </ul>
