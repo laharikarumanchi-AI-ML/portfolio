@@ -6,6 +6,14 @@
   --rule: #d8d8d3;
   --hover: rgba(26, 26, 26, 0.04);
 
+  /* Warm accent — used sparingly: featured card bg + headline number
+     + a small decorative element in the hero. Restraint is the point;
+     a single warm note across an otherwise cool/neutral page is what
+     pulls the eye, not five warm notes everywhere. */
+  --accent-cream: #fbf3e2;     /* very subtle warm bg, ~3.5% from --paper */
+  --accent-cream-edge: #f0e3c0; /* slightly stronger for the border */
+  --accent-gold: #9a7820;       /* deep warm gold — for the headline number */
+
   --font-serif: 'Iowan Old Style', 'Charter', Georgia, serif;
   --font-sans: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
   --font-mono: ui-monospace, 'SF Mono', Menlo, monospace;
@@ -115,24 +123,35 @@ a.card:hover .card-title { text-decoration-thickness: 2px; }
   display: block;
   color: inherit;
   text-decoration: none;
-  border: 1px solid var(--rule);
+  border: 1px solid var(--accent-cream-edge);
   padding: var(--space-3);
   margin-block: var(--space-3);
   border-radius: var(--radius);
-  background: var(--paper);
-  transition: border-color var(--t-fast), background-color var(--t-fast);
+  background: var(--accent-cream);
+  transition: border-color var(--t-fast), box-shadow var(--t-fast);
 }
 a.card-featured:hover {
-  border-color: var(--ink);
-  background-color: var(--hover);
+  border-color: var(--accent-gold);
+  box-shadow: 0 0 0 1px var(--accent-gold) inset;
 }
 .card-featured .eyebrow {
   display: inline-block;
   font-family: var(--font-serif);
   font-style: italic;
   font-size: 0.85rem;
-  color: var(--muted);
+  color: var(--accent-gold);
+  letter-spacing: 0.02em;
   margin: 0 0 var(--space-1) 0;
+}
+/* The headline number — biggest single signal on the card. Gold,
+   serif, oversized. This is the pixel that should pull the eye when
+   the page first loads. */
+.card-featured .headline-number {
+  font-family: var(--font-serif);
+  font-size: 1.5rem;
+  color: var(--accent-gold);
+  margin: var(--space-2) 0;
+  letter-spacing: -0.005em;
 }
 
 /* ───────── Tech-stack chips ───────── */
@@ -188,6 +207,31 @@ nav.site-nav .brand {
   transition: background-color var(--t-fast), color var(--t-fast);
 }
 .button:hover { background: var(--ink); color: var(--paper); text-decoration: none; }
+
+/* ───────── Decorative hero rule ─────────
+   A small horizontal ornament: thin gold line + a serif "§" or "*".
+   Sits between the name and the tagline. The eye reads "this isn't
+   a Bootstrap template; someone made a choice here." */
+
+.hero-rule {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0.4rem 0 0.6rem;
+  color: var(--accent-gold);
+  font-family: var(--font-serif);
+  font-size: 0.95rem;
+  letter-spacing: 0.04em;
+}
+.hero-rule::before,
+.hero-rule::after {
+  content: "";
+  flex: 0 0 28px;
+  height: 1px;
+  background: var(--accent-gold);
+  opacity: 0.55;
+}
+.hero-rule::after { flex: 1 1 auto; max-width: 120px; }
 
 /* ───────── Misc ───────── */
 
