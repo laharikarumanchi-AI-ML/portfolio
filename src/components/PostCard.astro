@@ -3,10 +3,15 @@ import type { CollectionEntry } from 'astro:content';
 interface Props { entry: CollectionEntry<'blog'>; }
 const { entry } = Astro.props;
 const url = `/blog/${entry.id.replace(/\.mdx?$/, '')}`;
-const date = entry.data.publishedAt.toISOString().slice(0, 10);
+const iso = entry.data.publishedAt.toISOString().slice(0, 10);
+const pretty = entry.data.publishedAt.toLocaleDateString('en-US', {
+  year: 'numeric', month: 'long', day: 'numeric',
+});
 ---
-<article>
-  <h4 style="margin-bottom:0.25rem;"><a href={url}>{entry.data.title}</a></h4>
-  <p style="margin:0.15rem 0; font-size:0.95rem; color:var(--muted);">{entry.data.description}</p>
-  <p style="margin:0; font-size:0.8rem; color:var(--muted);">{date}</p>
-</article>
+<a href={url} class="card">
+  <h4 class="card-title">{entry.data.title}</h4>
+  <p class="muted" style="margin:0.15rem 0; font-size:0.95rem;">{entry.data.description}</p>
+  <p style="margin:0;">
+    <time datetime={iso} class="sm muted">{pretty}</time>
+  </p>
+</a>

@@ -8,16 +8,21 @@ const { entry, variant } = Astro.props;
 const url = `/projects/${entry.id.replace(/\.mdx?$/, '')}`;
 ---
 {variant === 'featured' ? (
-  <article style="border:1px solid var(--rule); padding:1.5rem; margin-block:1.5rem;">
-    <h3 style="margin-top:0;"><a href={url}>{entry.data.title}</a></h3>
-    <p style="font-size:1.1rem; color:var(--muted); margin:0.5rem 0;">{entry.data.oneLiner}</p>
-    <p style="font-family:var(--font-serif); font-size:1.3rem; margin:0.75rem 0;">{entry.data.headlineNumber}</p>
-    <p style="font-size:0.85rem; color:var(--muted);">{entry.data.techStack.join(' · ')}</p>
-  </article>
+  <a href={url} class="card-featured">
+    <span class="eyebrow">Featured project</span>
+    <h3 class="card-title">{entry.data.title}</h3>
+    <p class="muted" style="font-size:1.05rem; margin:0.25rem 0 0.75rem;">{entry.data.oneLiner}</p>
+    <p style="font-family:var(--font-serif); font-size:1.35rem; margin:0.5rem 0;">{entry.data.headlineNumber}</p>
+    <ul class="chips" aria-label="Tech stack">
+      {entry.data.techStack.map(t => <li>{t}</li>)}
+    </ul>
+  </a>
 ) : (
-  <article>
-    <h4 style="margin-bottom:0.25rem;"><a href={url}>{entry.data.title}</a></h4>
-    <p style="margin:0; font-size:0.95rem; color:var(--muted);">{entry.data.oneLiner}</p>
-    <p style="margin:0.25rem 0 0; font-size:0.8rem; color:var(--muted);">{entry.data.techStack.join(' · ')}</p>
-  </article>
+  <a href={url} class="card">
+    <h4 class="card-title">{entry.data.title}</h4>
+    <p class="muted" style="margin:0; font-size:0.95rem;">{entry.data.oneLiner}</p>
+    <ul class="chips" aria-label="Tech stack">
+      {entry.data.techStack.map(t => <li>{t}</li>)}
+    </ul>
+  </a>
 )}

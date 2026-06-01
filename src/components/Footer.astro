@@ -1,3 +1,21 @@
-<footer style="margin-top:5rem; padding-block:2rem; border-top:1px solid var(--rule); font-size:0.9em; color:var(--muted);">
-  <p>© {new Date().getFullYear()} Lahari Karumanchi. <a href="https://github.com/laharikarumanchi-AI-ML">GitHub</a> · <a href="mailto:lahari.karumanchi01@gmail.com">Email</a></p>
+---
+const year = new Date().getFullYear();
+const links = [
+  { href: 'https://github.com/laharikarumanchi-AI-ML',         label: 'GitHub' },
+  { href: 'mailto:lahari.karumanchi01@gmail.com',              label: 'Email' },
+  { href: '/resume.pdf',                                       label: 'Résumé' },
+  { href: 'https://github.com/laharikarumanchi-AI-ML/portfolio', label: 'Source' },
+];
+---
+<footer style="margin-top:var(--space-5); padding-block:var(--space-4) var(--space-3); border-top:1px solid var(--rule); font-size:0.9em; color:var(--muted);">
+  <p style="margin:0 0 var(--space-1); font-family:var(--font-serif); color:var(--ink);">Lahari Karumanchi</p>
+  <p style="margin:0;">
+    {links.map((l, i) => (
+      <>
+        {i > 0 && <span style="margin:0 0.5rem;">·</span>}
+        <a href={l.href}>{l.label}</a>
+      </>
+    ))}
+  </p>
+  <p class="sm" style="margin:var(--space-2) 0 0;">© {year}</p>
 </footer>
