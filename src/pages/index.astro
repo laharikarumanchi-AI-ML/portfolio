@@ -17,32 +17,34 @@ const posts = (await getCollection('blog', ({ data }) => !data.draft))
             description="Third-year CS student. Code-as-action agents, RAG, classical ML. Recruiting for Summer 2026 ML/SWE internships.">
   <Hero />
 
-  <section id="projects">
-    {featured && (
-      <>
-        <h2>Featured</h2>
-        <ProjectCard entry={featured} variant="featured" />
-      </>
-    )}
+  <div class="numbered-sections">
+    <section id="projects">
+      {featured && (
+        <>
+          <h2>Featured</h2>
+          <ProjectCard entry={featured} variant="featured" />
+        </>
+      )}
 
-    <h2 style="margin-top:3rem;">More projects</h2>
-    <div style="display:grid; gap:1.5rem;">
-      {others.map(p => <ProjectCard entry={p} variant="compact" />)}
-    </div>
-  </section>
-
-  {posts.length > 0 && (
-    <section id="writing">
-      <h2 style="margin-top:3rem;">Recent writing</h2>
+      <h2 style="margin-top:3rem;">More projects</h2>
       <div style="display:grid; gap:1.5rem;">
-        {posts.map(p => <PostCard entry={p} />)}
+        {others.map(p => <ProjectCard entry={p} variant="compact" />)}
       </div>
     </section>
-  )}
 
-  <section id="about" style="margin-top:3rem;">
-    <h2>About</h2>
-    <p>Third-year CS @ CVR College of Engineering, recruiting for Summer 2026 ML/SWE internships. <a href="/about">More →</a></p>
-    <p style="margin-top:0.75rem;"><a href="/resume.pdf" class="button">Download résumé →</a></p>
-  </section>
+    {posts.length > 0 && (
+      <section id="writing">
+        <h2 style="margin-top:3rem;">Recent writing</h2>
+        <div style="display:grid; gap:1.5rem;">
+          {posts.map(p => <PostCard entry={p} />)}
+        </div>
+      </section>
+    )}
+
+    <section id="about" style="margin-top:3rem;">
+      <h2>About</h2>
+      <p>Third-year CS @ CVR College of Engineering, recruiting for Summer 2026 ML/SWE internships. <a href="/about">More →</a></p>
+      <p style="margin-top:0.75rem;"><a href="/resume.pdf" class="button">Download résumé →</a></p>
+    </section>
+  </div>
 </BaseLayout>
