@@ -4,20 +4,37 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 <BaseLayout title="About — Lahari Karumanchi"
             description="Third-year CS student at CVR College of Engineering. ML projects, agents, and the occasional opinion.">
   <h1>About</h1>
-  <p>
-    I'm Lahari, a third-year Computer Science undergraduate at CVR College of
-    Engineering in Hyderabad, India. I'm interested in machine learning, agents,
-    and the messier parts of taking models from notebook to production.
+
+  <pre><code class="language-python">{`class Lahari:
+    """ML engineering, with citations."""
+
+    name     = "Lahari Karumanchi"
+    location = "Hyderabad, India"
+    school   = "B.Tech CS @ CVR College of Engineering"  # graduating 2027
+
+    shipped = [
+        "data-analysis-agent",   # code-as-action, sandboxed Jupyter
+        "document-qa-rag",       # page-aware chunks, threshold abstention
+        "telco-churn-model",     # XGBoost + SHAP, 0.83 ROC-AUC
+    ]
+
+    learning    = ["LoRA fine-tuning", "production ML systems"]
+    looking_for = "Summer 2026 ML / SWE internship"
+`}</code></pre>
+
+  <p style="margin-top:1.5rem;">
+    The code is mostly the story. What it leaves out: I like the messy parts
+    of taking models from notebook to production, I think rigorous evaluation
+    is more important than benchmark-hopping, and I'd rather write 200 lines
+    of careful code than import a framework that hides the mechanics. See the
+    <a href="/projects/data-analysis-agent">Data Analysis Agent</a> for what
+    that looks like in practice.
   </p>
+
   <p>
-    My current obsession is code-as-action agents and rigorous LLM evaluation —
-    see the <a href="/projects/data-analysis-agent">Data Analysis Agent</a> for
-    where that's gone so far.
+    If you're hiring and any of the projects here resonate, please reach out.
   </p>
-  <p>
-    I'm recruiting for a <strong>Summer 2026 ML / software engineering internship</strong>.
-    If you're hiring and any of the projects below resonate, please reach out.
-  </p>
+
   <h2>Reach me</h2>
   <p>
     Email: <a href="mailto:lahari.karumanchi01@gmail.com">lahari.karumanchi01@gmail.com</a><br/>
