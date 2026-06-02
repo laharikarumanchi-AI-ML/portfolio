@@ -32,6 +32,49 @@ const posts = (await getCollection('blog', ({ data }) => !data.draft))
       </div>
     </section>
 
+    <section id="skills" style="margin-top:3rem;">
+      <h2>What I work with</h2>
+
+      <p class="skill-category">Languages</p>
+      <ul class="chips">
+        <li>Python</li>
+        <li>Java</li>
+        <li>C</li>
+        <li>SQL</li>
+      </ul>
+
+      <p class="skill-category">ML / data</p>
+      <ul class="chips">
+        <li>PyTorch</li>
+        <li>scikit-learn</li>
+        <li>XGBoost</li>
+        <li>sentence-transformers</li>
+        <li>FAISS</li>
+        <li>Pandas</li>
+        <li>NumPy</li>
+      </ul>
+
+      <p class="skill-category">Tools</p>
+      <ul class="chips">
+        <li>Git</li>
+        <li>Docker</li>
+        <li>FastAPI</li>
+        <li>Streamlit</li>
+        <li>Jupyter</li>
+        <li>pytest</li>
+        <li>GitHub Actions</li>
+      </ul>
+
+      <p class="skill-category">Areas</p>
+      <ul class="chips">
+        <li>RAG</li>
+        <li>Code-as-action agents</li>
+        <li>Vector search</li>
+        <li>Honest evaluation</li>
+        <li>NLP</li>
+      </ul>
+    </section>
+
     {posts.length > 0 && (
       <section id="writing">
         <h2 style="margin-top:3rem;">Recent writing</h2>
