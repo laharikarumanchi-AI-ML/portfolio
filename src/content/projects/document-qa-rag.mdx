@@ -1,12 +1,29 @@
 ---
 title: "Document Q&A Assistant (RAG)"
 oneLiner: "A retrieval-augmented chatbot that answers questions over a set of PDFs, with source citations."
-headlineNumber: "Reduced hallucinations vs plain LLM by returning source citations"
-techStack: ["Python", "LangChain", "FAISS", "OpenAI API", "Streamlit"]
-year: 2025
+headlineNumber: "Structural abstention — 77 tests across 8 modules"
+techStack: ["Python", "sentence-transformers", "FAISS", "Groq / Llama-3.3", "pdfplumber", "Streamlit"]
+year: 2026
+githubUrl: "https://github.com/laharikarumanchi-AI-ML/document-qa-rag"
+demoUrl: "https://huggingface.co/spaces/laharikarumanchi/document-qa-rag"
 featured: false
 order: 2
 ---
+
+## Try it
+
+Upload a PDF, ask a question, see an answer with citations to the exact page — or watch it abstain explicitly when the document doesn't cover what you asked.
+
+<iframe
+  src="https://laharikarumanchi-document-qa-rag.hf.space"
+  title="Document Q&A RAG — live demo"
+  width="100%"
+  height="700"
+  loading="lazy"
+  style="border:1px solid var(--rule); border-radius:4px; margin-block:1.5rem; background:#fff;"
+></iframe>
+
+The demo above runs on Hugging Face Spaces (free CPU tier — first load may take ~30s as the container wakes up, and the first embedding query downloads the ~80MB sentence-transformers model). [Open in a new tab →](https://huggingface.co/spaces/laharikarumanchi/document-qa-rag)
 
 ## Problem
 
@@ -32,4 +49,5 @@ I'd add a re-ranker on top of vector search (top-50 → top-5 with a cross-encod
 
 ## Links
 
-- GitHub: <a href="https://github.com/laharikarumanchi-AI-ML">github.com/laharikarumanchi-AI-ML</a>
+- GitHub: <a href="https://github.com/laharikarumanchi-AI-ML/document-qa-rag">github.com/laharikarumanchi-AI-ML/document-qa-rag</a>
+- Live demo: <a href="https://huggingface.co/spaces/laharikarumanchi/document-qa-rag">huggingface.co/spaces/laharikarumanchi/document-qa-rag</a>

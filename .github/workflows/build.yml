@@ -14,7 +14,9 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          # Astro 6 requires Node >= 22.12 (was 20 when this workflow
+          # was first set up; Astro's minimum bumped under us).
+          node-version: '22'
           cache: 'npm'
 
       - name: Install dependencies
