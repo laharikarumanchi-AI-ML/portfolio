@@ -263,6 +263,25 @@ nav.site-nav .brand {
 }
 .hero-rule::after { flex: 1 1 auto; max-width: 120px; }
 
+/* ───────── Skill-category label ─────────
+   Small uppercase label that sits above each chip group in the
+   "What I work with" section. Deliberately NOT a heading (so it
+   doesn't interfere with the numbered-sections h2 counter) and
+   deliberately muted so the eye stays on the chips. */
+
+.skill-category {
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 1.5rem 0 0.5rem;
+}
+.skill-category:first-of-type {
+  margin-top: 0.5rem;  /* tighter just below the section h2 */
+}
+
 /* ───────── Misc ───────── */
 
 .muted { color: var(--muted); }
