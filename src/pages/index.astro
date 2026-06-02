@@ -5,9 +5,9 @@ import Hero from '../components/Hero.astro';
 import ProjectCard from '../components/ProjectCard.astro';
 import PostCard from '../components/PostCard.astro';
 
-const projects = (await getCollection('projects')).sort((a, b) => a.data.order - b.data.order);
+const projects = (await getCollection('projects'));
 const featured = projects.find(p => p.data.featured);
-const others = projects.filter(p => !p.data.featured);
+const otherCount = projects.length - (featured ? 1 : 0);
 
 const posts = (await getCollection('blog', ({ data }) => !data.draft))
   .sort((a, b) => +b.data.publishedAt - +a.data.publishedAt)
@@ -18,19 +18,19 @@ const posts = (await getCollection('blog', ({ data }) => !data.draft))
   <Hero />
 
   <div class="numbered-sections">
-    <section id="projects">
-      {featured && (
-        <>
-          <h2>Featured</h2>
-          <ProjectCard entry={featured} variant="featured" />
-        </>
-      )}
-
-      <h2 style="margin-top:3rem;">More projects</h2>
-      <div style="display:grid; gap:1.5rem;">
-        {others.map(p => <ProjectCard entry={p} variant="compact" />)}
-      </div>
-    </section>
+    {featured && (
+      <section id="featured">
+        <h2>Featured</h2>
+        <ProjectCard entry={featured} variant="featured" />
+        {otherCount > 0 && (
+          <p style="margin-top:0.5rem;">
+            <a href="/projects" class="button-sm button-sm-quiet">
+              See all {projects.length} projects →
+            </a>
+          </p>
+        )}
+      </section>
+    )}
 
     <section id="skills" style="margin-top:3rem;">
       <h2>What I work with</h2>

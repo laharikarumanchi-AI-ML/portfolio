@@ -1,0 +1,23 @@
+---
+import { getCollection } from 'astro:content';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import ProjectCard from '../../components/ProjectCard.astro';
+
+// All projects sorted by year (newest first), tie-broken by `order`
+const projects = (await getCollection('projects'))
+  .sort((a, b) => (b.data.year - a.data.year) || (a.data.order - b.data.order));
+---
+<BaseLayout title="Projects — Lahari Karumanchi"
+            description="All projects: code-as-action agents, retrieval-augmented Q&A, classical ML.">
+  <p style="font-size:0.85rem; color:var(--muted); margin-bottom:0;">
+    <a href="/">← Home</a>
+  </p>
+  <h1 style="margin-top:0.5rem;">Projects</h1>
+  <p class="muted" style="font-size:1.05rem; margin-top:0.5rem;">
+    Five projects, oldest to newest in the resume, newest first here. Click <strong>Read the writeup →</strong> on any card to see the design choices + (where shipped) embedded demos.
+  </p>
+
+  <div style="margin-top:var(--space-4);">
+    {projects.map(p => <ProjectCard entry={p} variant="index" />)}
+  </div>
+</BaseLayout>
