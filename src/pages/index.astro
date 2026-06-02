@@ -7,7 +7,11 @@ import PostCard from '../components/PostCard.astro';
 
 const projects = (await getCollection('projects'));
 const featured = projects.find(p => p.data.featured);
-const otherCount = projects.length - (featured ? 1 : 0);
+// Two non-featured "Selected work" teasers, newest first.
+const selected = projects
+  .filter(p => !p.data.featured)
+  .sort((a, b) => (b.data.year - a.data.year) || (a.data.order - b.data.order))
+  .slice(0, 2);
 
 const posts = (await getCollection('blog', ({ data }) => !data.draft))
   .sort((a, b) => +b.data.publishedAt - +a.data.publishedAt)
@@ -22,13 +26,20 @@ const posts = (await getCollection('blog', ({ data }) => !data.draft))
       <section id="featured">
         <h2>Featured</h2>
         <ProjectCard entry={featured} variant="featured" />
-        {otherCount > 0 && (
-          <p style="margin-top:0.5rem;">
-            <a href="/projects" class="button-sm button-sm-quiet">
-              See all {projects.length} projects →
-            </a>
-          </p>
-        )}
+      </section>
+    )}
+
+    {selected.length > 0 && (
+      <section id="selected" style="margin-top:3rem;">
+        <h2>Selected work</h2>
+        <div style="display:grid; gap:1.5rem;">
+          {selected.map(p => <ProjectCard entry={p} variant="compact" />)}
+        </div>
+        <p style="margin-top:1.25rem;">
+          <a href="/projects" class="button-sm button-sm-quiet">
+            See all {projects.length} projects →
+          </a>
+        </p>
       </section>
     )}
 
