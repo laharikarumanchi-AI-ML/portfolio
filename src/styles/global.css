@@ -193,6 +193,36 @@ nav.site-nav .brand {
   nav.site-nav .brand { flex: 0 0 auto; margin-right: auto; }
 }
 
+/* ───────── Numbered sections ─────────
+   Auto-numbers the H2s under any container with class `numbered-sections`
+   using CSS counters — no need to type "01.", "02." in markup. Sections
+   stay correctly numbered when reordered. Matches the warm accent so the
+   numbers feel like part of the system, not chrome.
+
+   Used on the landing page; deliberately scoped (not global) because
+   project case-study pages have their own H2s ("Results", "Sources",
+   etc.) that shouldn't get numbered. */
+
+.numbered-sections {
+  counter-reset: section;
+}
+.numbered-sections h2 {
+  display: flex;
+  align-items: baseline;
+  gap: 0.55rem;
+}
+.numbered-sections h2::before {
+  counter-increment: section;
+  content: counter(section, decimal-leading-zero) ".";
+  color: var(--accent-gold);
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 0.7em;
+  letter-spacing: 0.02em;
+  flex: 0 0 auto;
+}
+
 /* ───────── Button (used for CTAs like Download résumé) ─────────
    Classic minimal-academic button: outlined; inverts to ink/paper on hover. */
 
