@@ -2,12 +2,12 @@
 import type { CollectionEntry } from 'astro:content';
 interface Props {
   entry: CollectionEntry<'projects'>;
-  variant: 'featured' | 'compact';
+  variant: 'featured' | 'compact' | 'index';
 }
 const { entry, variant } = Astro.props;
 const url = `/projects/${entry.id.replace(/\.mdx?$/, '')}`;
 ---
-{variant === 'featured' ? (
+{variant === 'featured' && (
   <a href={url} class="card-featured">
     <span class="eyebrow">Featured project</span>
     <h3 class="card-title">{entry.data.title}</h3>
@@ -17,7 +17,9 @@ const url = `/projects/${entry.id.replace(/\.mdx?$/, '')}`;
       {entry.data.techStack.map(t => <li>{t}</li>)}
     </ul>
   </a>
-) : (
+)}
+
+{variant === 'compact' && (
   <a href={url} class="card">
     <h4 class="card-title">{entry.data.title}</h4>
     <p class="muted" style="margin:0; font-size:0.95rem;">{entry.data.oneLiner}</p>
@@ -25,4 +27,29 @@ const url = `/projects/${entry.id.replace(/\.mdx?$/, '')}`;
       {entry.data.techStack.map(t => <li>{t}</li>)}
     </ul>
   </a>
+)}
+
+{variant === 'index' && (
+  <article class="card-index">
+    <div class="card-index-head">
+      <h3 class="card-index-title">
+        <a href={url}>{entry.data.title}</a>
+      </h3>
+      <span class="card-index-year">{entry.data.year}</span>
+    </div>
+    <p class="muted" style="margin:0.4rem 0 0.75rem; font-size:1rem;">{entry.data.oneLiner}</p>
+    <p class="card-index-headline">{entry.data.headlineNumber}</p>
+    <ul class="chips" aria-label="Tech stack">
+      {entry.data.techStack.map(t => <li>{t}</li>)}
+    </ul>
+    <div class="card-index-actions">
+      {entry.data.githubUrl && (
+        <a href={entry.data.githubUrl} class="button-sm" rel="noopener">Code →</a>
+      )}
+      {entry.data.demoUrl && (
+        <a href={entry.data.demoUrl} class="button-sm" rel="noopener">Live demo →</a>
+      )}
+      <a href={url} class="button-sm button-sm-quiet">Read the writeup →</a>
+    </div>
+  </article>
 )}
