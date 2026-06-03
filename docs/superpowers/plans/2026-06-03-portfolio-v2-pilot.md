@@ -1561,18 +1561,23 @@ const tocHeadings = headings.filter(h => h.depth === 2 || h.depth === 3);
 
 <script>
   // 1. Sync the <details> open state with viewport size.
-  //    - Desktop (>900px): always open, summary is hidden via CSS.
-  //    - Mobile (<=900px): user toggles via summary; we leave their choice alone.
-  //    Without this, a user who closes the disclosure on mobile and then
-  //    resizes back to desktop would see an empty sidebar.
+  //    Per spec §3.6, mobile starts collapsed; desktop is always open.
+  //    The markup uses `<details open>` so desktop renders correctly
+  //    even before this script runs (no FOUC of an empty sidebar).
+  //    Then on script init we close it on mobile, and re-open it
+  //    whenever the viewport crosses back to desktop.
+  //    Known minor wart: a mobile→desktop→mobile round-trip re-opens
+  //    the disclosure even if the user had closed it. Acceptable given
+  //    the rarity of viewport round-trips on real reads.
   const tocDetails = document.querySelector<HTMLDetailsElement>('aside.toc-sidebar details.toc-mobile-disclosure');
   if (tocDetails) {
     const desktopMQ = window.matchMedia('(min-width: 901px)');
     const syncOpen = () => {
       if (desktopMQ.matches) tocDetails.open = true;
     };
+    // Start collapsed on mobile to match spec §3.6 intent.
+    if (!desktopMQ.matches) tocDetails.open = false;
     desktopMQ.addEventListener('change', syncOpen);
-    syncOpen();
   }
 
   // 2. Active-section highlight via IntersectionObserver.
