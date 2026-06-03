@@ -1,33 +1,45 @@
 :root {
-  --ink: #1a1a1a;
-  --paper: #fafaf7;
-  --link: #0a5dae;
-  --muted: #555;
-  --rule: #d8d8d3;
-  --hover: rgba(26, 26, 26, 0.04);
+  /* Greyscale */
+  --ink:   #0a0a0a;
+  --paper: #ffffff;
+  --muted: #525252;
+  --rule:  #e5e5e5;
+  --hover: rgba(10, 10, 10, 0.04);
 
-  /* Warm accent — used sparingly: featured card bg + headline number
-     + a small decorative element in the hero. Restraint is the point;
-     a single warm note across an otherwise cool/neutral page is what
-     pulls the eye, not five warm notes everywhere. */
-  --accent-cream: #fbf3e2;     /* very subtle warm bg, ~3.5% from --paper */
-  --accent-cream-edge: #f0e3c0; /* slightly stronger for the border */
-  --accent-gold: #9a7820;       /* deep warm gold — for the headline number */
+  /* Aurora accents */
+  --accent-mint:        #a7f3d0;
+  --accent-sky:         #93c5fd;
+  --accent-violet:      #c4b5fd;
+  --accent-teal:        #0d9488;   /* primary action + link color */
+  --accent-violet-deep: #7c3aed;   /* secondary / TOC active highlight */
 
-  --font-serif: 'Iowan Old Style', 'Charter', Georgia, serif;
-  --font-sans: -apple-system, BlinkMacSystemFont, 'Inter', sans-serif;
-  --font-mono: ui-monospace, 'SF Mono', Menlo, monospace;
+  /* The signature gradient — used on hero, featured backdrop, CTA blocks */
+  --gradient-hero:
+    radial-gradient(at 20% 30%, var(--accent-mint)   0%, transparent 55%),
+    radial-gradient(at 80% 20%, var(--accent-sky)    0%, transparent 55%),
+    radial-gradient(at 60% 80%, var(--accent-violet) 0%, transparent 55%),
+    linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%);
 
-  --content-width: 680px;
-  --wide-width: 960px;
+  /* Typography */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 
+  /* Widths */
+  --content-width:  720px;
+  --shell-width:    1200px;
+  --shell-deepdive: 1100px;
+
+  /* Spacing scale (unchanged from v1) */
   --space-1: 0.5rem;
   --space-2: 1rem;
   --space-3: 1.5rem;
   --space-4: 2.5rem;
   --space-5: 4rem;
 
-  --radius: 4px;
+  /* Radii — softer */
+  --radius:    8px;
+  --radius-sm: 6px;
+
   --t-fast: 120ms ease-out;
 }
 
@@ -39,6 +51,7 @@ html {
   background: var(--paper);
   line-height: 1.65;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 body {
@@ -48,43 +61,56 @@ body {
   margin-inline: auto;
 }
 
-main.wide { max-width: var(--wide-width); }
+main.wide { max-width: var(--shell-width); }
 
 h1, h2, h3, h4 {
-  font-family: var(--font-serif);
-  font-weight: 600;
-  line-height: 1.2;
+  font-family: var(--font-sans);
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
   margin-block: var(--space-4) var(--space-2);
 }
 
-h1 { font-size: 2.25rem; }
-h2 { font-size: 1.5rem; }
-h3 { font-size: 1.2rem; }
+h1 { font-size: 3rem;   line-height: 1.05; }
+h2 { font-size: 1.875rem; }
+h3 { font-size: 1.25rem;  font-weight: 600; letter-spacing: -0.015em; }
 
 a {
-  color: var(--link);
+  color: var(--accent-teal);
   text-decoration: underline;
   text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
   transition: text-decoration-thickness var(--t-fast);
 }
 a:hover { text-decoration-thickness: 2px; }
 
 :focus-visible {
-  outline: 2px solid var(--link);
+  outline: 2px solid var(--accent-teal);
   outline-offset: 3px;
   border-radius: 2px;
 }
 
 code, pre {
   font-family: var(--font-mono);
-  font-size: 0.9em;
+  font-size: 0.875em;
 }
 
 pre {
-  background: #f0f0eb;
+  background: #0d1117;       /* matches github-dark-dimmed Shiki theme */
+  color: #c9d1d9;
   padding: var(--space-2);
   overflow-x: auto;
   border-radius: var(--radius);
+  border: 1px solid #21262d;
+  line-height: 1.55;
+}
+
+:not(pre) > code {
+  background: #f5f5f5;
+  color: var(--ink);
+  padding: 0.15em 0.35em;
+  border-radius: 4px;
+  border: 1px solid var(--rule);
 }
 
 hr {
@@ -114,44 +140,9 @@ a.card:hover .card-title { text-decoration-thickness: 2px; }
 
 .card-title {
   margin: 0 0 0.25rem 0;
-  color: var(--link);
+  color: var(--accent-teal);
   text-decoration: underline;
   text-underline-offset: 2px;
-}
-
-.card-featured {
-  display: block;
-  color: inherit;
-  text-decoration: none;
-  border: 1px solid var(--accent-cream-edge);
-  padding: var(--space-3);
-  margin-block: var(--space-3);
-  border-radius: var(--radius);
-  background: var(--accent-cream);
-  transition: border-color var(--t-fast), box-shadow var(--t-fast);
-}
-a.card-featured:hover {
-  border-color: var(--accent-gold);
-  box-shadow: 0 0 0 1px var(--accent-gold) inset;
-}
-.card-featured .eyebrow {
-  display: inline-block;
-  font-family: var(--font-serif);
-  font-style: italic;
-  font-size: 0.85rem;
-  color: var(--accent-gold);
-  letter-spacing: 0.02em;
-  margin: 0 0 var(--space-1) 0;
-}
-/* The headline number — biggest single signal on the card. Gold,
-   serif, oversized. This is the pixel that should pull the eye when
-   the page first loads. */
-.card-featured .headline-number {
-  font-family: var(--font-serif);
-  font-size: 1.5rem;
-  color: var(--accent-gold);
-  margin: var(--space-2) 0;
-  letter-spacing: -0.005em;
 }
 
 /* ───────── Project card — "index" variant ─────────
@@ -177,26 +168,25 @@ a.card-featured:hover {
 }
 .card-index-title {
   margin: 0;
-  font-family: var(--font-serif);
   font-weight: 600;
   font-size: 1.3rem;
+  letter-spacing: -0.015em;
 }
 .card-index-title a {
-  color: var(--link);
+  color: var(--accent-teal);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 .card-index-year {
-  font-family: var(--font-serif);
   font-style: italic;
   font-size: 0.9rem;
   color: var(--muted);
   flex: 0 0 auto;
 }
 .card-index-headline {
-  font-family: var(--font-serif);
   font-size: 1.2rem;
-  color: var(--accent-gold);
+  font-weight: 600;
+  color: var(--accent-teal);
   margin: 0.5rem 0;
 }
 .card-index-actions {
@@ -262,7 +252,6 @@ nav.site-nav {
   align-items: baseline;
   gap: 0.75rem 1.25rem;
   padding-block: var(--space-3);
-  font-family: var(--font-serif);
   border-bottom: 1px solid var(--rule);
 }
 nav.site-nav .brand {
@@ -271,36 +260,6 @@ nav.site-nav .brand {
 }
 @media (min-width: 560px) {
   nav.site-nav .brand { flex: 0 0 auto; margin-right: auto; }
-}
-
-/* ───────── Numbered sections ─────────
-   Auto-numbers the H2s under any container with class `numbered-sections`
-   using CSS counters — no need to type "01.", "02." in markup. Sections
-   stay correctly numbered when reordered. Matches the warm accent so the
-   numbers feel like part of the system, not chrome.
-
-   Used on the landing page; deliberately scoped (not global) because
-   project case-study pages have their own H2s ("Results", "Sources",
-   etc.) that shouldn't get numbered. */
-
-.numbered-sections {
-  counter-reset: section;
-}
-.numbered-sections h2 {
-  display: flex;
-  align-items: baseline;
-  gap: 0.55rem;
-}
-.numbered-sections h2::before {
-  counter-increment: section;
-  content: counter(section, decimal-leading-zero) ".";
-  color: var(--accent-gold);
-  font-family: var(--font-serif);
-  font-style: italic;
-  font-weight: 400;
-  font-size: 0.7em;
-  letter-spacing: 0.02em;
-  flex: 0 0 auto;
 }
 
 /* ───────── Button (used for CTAs like Download résumé) ─────────
@@ -317,50 +276,6 @@ nav.site-nav .brand {
   transition: background-color var(--t-fast), color var(--t-fast);
 }
 .button:hover { background: var(--ink); color: var(--paper); text-decoration: none; }
-
-/* ───────── Decorative hero rule ─────────
-   A small horizontal ornament: thin gold line + a serif "§" or "*".
-   Sits between the name and the tagline. The eye reads "this isn't
-   a Bootstrap template; someone made a choice here." */
-
-.hero-rule {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  margin: 0.4rem 0 0.6rem;
-  color: var(--accent-gold);
-  font-family: var(--font-serif);
-  font-size: 0.95rem;
-  letter-spacing: 0.04em;
-}
-.hero-rule::before,
-.hero-rule::after {
-  content: "";
-  flex: 0 0 28px;
-  height: 1px;
-  background: var(--accent-gold);
-  opacity: 0.55;
-}
-.hero-rule::after { flex: 1 1 auto; max-width: 120px; }
-
-/* ───────── Skill-category label ─────────
-   Small uppercase label that sits above each chip group in the
-   "What I work with" section. Deliberately NOT a heading (so it
-   doesn't interfere with the numbered-sections h2 counter) and
-   deliberately muted so the eye stays on the chips. */
-
-.skill-category {
-  font-family: var(--font-sans);
-  font-size: 0.78rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--muted);
-  margin: 1.5rem 0 0.5rem;
-}
-.skill-category:first-of-type {
-  margin-top: 0.5rem;  /* tighter just below the section h2 */
-}
 
 /* ───────── Misc ───────── */
 
