@@ -358,17 +358,17 @@ import Nav from '../components/Nav.astro';
 import Footer from '../components/Footer.astro';
 ```
 
-- [ ] **Step 2: Add `<link rel="preload">` for the above-fold heading weight**
+- [ ] **Step 2: Verify @fontsource already ships `font-display: swap`**
 
-Per spec §4.2 risk register and review recommendation #2: preload Inter 700 to protect Lighthouse Performance.
+`@fontsource/inter@5.1.0` and `@fontsource/jetbrains-mono@5.1.0` both bake `font-display: swap` into every weight's `@font-face` rule. That gives FOUT-not-FOIT behavior automatically and is the main Lighthouse-Performance protection we need.
 
-After the existing `<link rel="canonical">` line in `<head>`, add:
-
-```astro
-<link rel="preload" href="/_astro/inter-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin />
+```bash
+grep "font-display" node_modules/@fontsource/inter/700.css
 ```
 
-(The actual hashed filename may differ — Astro's build picks a content hash. We'll fix this in Task 1.7 after first build by inspecting `dist/`.)
+Expected: `font-display: swap;` — confirms we don't need to do anything else.
+
+(No `<link rel="preload">` is added. Astro emits hashed filenames per build, which makes a static preload `href` fragile — it would 404 on the next build. Skipping the preload trades ~30ms of LCP improvement for zero risk of a 404 on every page load; on a small static site this is the right call.)
 
 - [ ] **Step 3: Build**
 
@@ -386,29 +386,7 @@ ls dist/_astro/ | grep -E "(inter|jetbrains)" | head -10
 
 Expected: 4 woff2 files (one per imported weight).
 
-- [ ] **Step 5: Fix the preload href to match the actual emitted filename**
-
-```bash
-# Find the actual emitted filename for Inter 700
-ls dist/_astro/ | grep "inter-latin-700-normal" | head -1
-```
-
-If the filename matches what you put in the preload, fine. If it differs (e.g., `inter-latin-700-normal.B7gKp2.woff2`), update the preload href in `BaseLayout.astro` to match.
-
-If the filename has a build hash (it will), use a wildcard-safe pattern: change the preload to an inline `<style>` that adds `font-display: swap` for Inter, which gives most of the benefit without the hash-tracking pain:
-
-```astro
-<style>
-  @font-face {
-    font-family: 'Inter';
-    font-display: swap;
-  }
-</style>
-```
-
-Pick whichever is less fragile.
-
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add src/layouts/BaseLayout.astro
@@ -1559,7 +1537,14 @@ const { headings } = Astro.props;
 const tocHeadings = headings.filter(h => h.depth === 2 || h.depth === 3);
 ---
 <aside class="toc-sidebar" aria-label="Table of contents">
-  <details class="toc-mobile-disclosure">
+  {/*
+    `open` attribute is set unconditionally — the inline script below
+    syncs it with viewport size so desktop always shows the contents.
+    Without `open`, the browser's UA stylesheet hides every child except
+    `<summary>`, and the desktop CSS hides `<summary>` too, resulting in
+    an empty sidebar. The `open` attribute is the fix.
+  */}
+  <details class="toc-mobile-disclosure" open>
     <summary>Jump to section</summary>
     <p class="toc-title">On this page</p>
     <ol>
@@ -1575,15 +1560,29 @@ const tocHeadings = headings.filter(h => h.depth === 2 || h.depth === 3);
 </aside>
 
 <script>
-  // Active-section highlight via IntersectionObserver.
-  // Observes every <section data-toc-slug> in the main column and toggles
-  // aria-current="location" on the matching TOC <a>.
+  // 1. Sync the <details> open state with viewport size.
+  //    - Desktop (>900px): always open, summary is hidden via CSS.
+  //    - Mobile (<=900px): user toggles via summary; we leave their choice alone.
+  //    Without this, a user who closes the disclosure on mobile and then
+  //    resizes back to desktop would see an empty sidebar.
+  const tocDetails = document.querySelector<HTMLDetailsElement>('aside.toc-sidebar details.toc-mobile-disclosure');
+  if (tocDetails) {
+    const desktopMQ = window.matchMedia('(min-width: 901px)');
+    const syncOpen = () => {
+      if (desktopMQ.matches) tocDetails.open = true;
+    };
+    desktopMQ.addEventListener('change', syncOpen);
+    syncOpen();
+  }
+
+  // 2. Active-section highlight via IntersectionObserver.
+  //    Observes every H2/H3 with an id in the main column and toggles
+  //    aria-current="location" on the matching TOC <a>.
   const links = document.querySelectorAll<HTMLAnchorElement>('aside.toc-sidebar a[data-toc-slug]');
   if (links.length > 0) {
     const linkBySlug = new Map<string, HTMLAnchorElement>();
     links.forEach(a => linkBySlug.set(a.dataset.tocSlug!, a));
 
-    // Find the headings in the main column and observe their parent sections.
     const headingEls = document.querySelectorAll<HTMLElement>('main h2[id], main h3[id]');
 
     let activeSlug: string | null = null;
@@ -1609,7 +1608,7 @@ const tocHeadings = headings.filter(h => h.depth === 2 || h.depth === 3);
 
     headingEls.forEach(h => observer.observe(h));
 
-    // Smooth-scroll on click (works even without scroll-behavior: smooth in CSS)
+    // 3. Smooth-scroll on TOC link click + history.pushState for back-button support.
     links.forEach(a => {
       a.addEventListener('click', (e) => {
         const slug = a.dataset.tocSlug!;
@@ -2394,10 +2393,26 @@ A reasonable inline SVG (keep colors Aurora-flavored — boxes in cool slate, ar
 
 ```bash
 mkdir -p public/diagrams
-# Write the SVG above to public/diagrams/da-agent-architecture.svg
 ```
 
-- [ ] **Step 4: Commit**
+Then **use the Write tool** to create `public/diagrams/da-agent-architecture.svg` with the exact SVG markup from Step 2. (Do not use `cat <<EOF` heredocs — they'll mangle the XML.)
+
+- [ ] **Step 4: Verify the SVG file is well-formed**
+
+```bash
+xmllint --noout public/diagrams/da-agent-architecture.svg && echo OK
+```
+
+Expected: `OK`. If `xmllint` isn't available, open the file in a browser via `npm run dev` and visit `/diagrams/da-agent-architecture.svg` directly — it should render.
+
+- [ ] **Step 5: Verify image rendering in MDX won't get double-bordered**
+
+The `ProjectLayoutV2.astro` global styles add `border + padding + bg` to `<img>` elements inside `.deepdive-main`. The SVG has its own internal background and the boxes already have visual structure. The wrapping border may look intentional (a "framed diagram" look) or doubled (border-on-border). Build, view on `/projects/data-analysis-agent`, and decide:
+
+- If it looks good: done.
+- If the border looks doubled: add a one-off class to the wrapping `<img>` in the MDX (e.g., `<img src="/diagrams/da-agent-architecture.svg" alt="..." class="no-frame" />`) and add `.deepdive-main img.no-frame { border: none; padding: 0; background: transparent; }` to `ProjectLayoutV2.astro`'s scoped styles.
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add public/diagrams/da-agent-architecture.svg
