@@ -12,6 +12,6 @@ const pretty = entry.data.publishedAt.toLocaleDateString('en-US', {
   <h4 class="card-title">{entry.data.title}</h4>
   <p class="muted" style="margin:0.15rem 0; font-size:0.95rem;">{entry.data.description}</p>
   <p style="margin:0;">
-    <time datetime={iso} class="sm muted">{pretty}</time>
+    <time datetime={iso} class="sm muted" style="font-family:var(--font-mono); font-size:0.8rem;">{pretty}</time>
   </p>
 </a>
