@@ -63,6 +63,10 @@ body {
 
 main.wide { max-width: var(--shell-width); }
 
+/* In-page anchors (#featured, #selected, etc.) must clear the sticky nav.
+   The nav is ~3rem tall with backdrop-blur; 5rem buys headroom + breathing room. */
+section[id] { scroll-margin-top: 5rem; }
+
 h1, h2, h3, h4 {
   font-family: var(--font-sans);
   font-weight: 700;
