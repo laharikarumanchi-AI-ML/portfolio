@@ -145,41 +145,6 @@ a.card:hover .card-title { text-decoration-thickness: 2px; }
   text-underline-offset: 2px;
 }
 
-.card-featured {
-  display: block;
-  color: inherit;
-  text-decoration: none;
-  border: 1px solid var(--accent-cream-edge);
-  padding: var(--space-3);
-  margin-block: var(--space-3);
-  border-radius: var(--radius);
-  background: var(--accent-cream);
-  transition: border-color var(--t-fast), box-shadow var(--t-fast);
-}
-a.card-featured:hover {
-  border-color: var(--accent-gold);
-  box-shadow: 0 0 0 1px var(--accent-gold) inset;
-}
-.card-featured .eyebrow {
-  display: inline-block;
-  font-family: var(--font-serif);
-  font-style: italic;
-  font-size: 0.85rem;
-  color: var(--accent-gold);
-  letter-spacing: 0.02em;
-  margin: 0 0 var(--space-1) 0;
-}
-/* The headline number — biggest single signal on the card. Gold,
-   serif, oversized. This is the pixel that should pull the eye when
-   the page first loads. */
-.card-featured .headline-number {
-  font-family: var(--font-serif);
-  font-size: 1.5rem;
-  color: var(--accent-gold);
-  margin: var(--space-2) 0;
-  letter-spacing: -0.005em;
-}
-
 /* ───────── Project card — "index" variant ─────────
    Used on /projects/. Richer than the home-page compact cards
    (gets a border, a year label, headline number, and action
@@ -299,36 +264,6 @@ nav.site-nav .brand {
   nav.site-nav .brand { flex: 0 0 auto; margin-right: auto; }
 }
 
-/* ───────── Numbered sections ─────────
-   Auto-numbers the H2s under any container with class `numbered-sections`
-   using CSS counters — no need to type "01.", "02." in markup. Sections
-   stay correctly numbered when reordered. Matches the warm accent so the
-   numbers feel like part of the system, not chrome.
-
-   Used on the landing page; deliberately scoped (not global) because
-   project case-study pages have their own H2s ("Results", "Sources",
-   etc.) that shouldn't get numbered. */
-
-.numbered-sections {
-  counter-reset: section;
-}
-.numbered-sections h2 {
-  display: flex;
-  align-items: baseline;
-  gap: 0.55rem;
-}
-.numbered-sections h2::before {
-  counter-increment: section;
-  content: counter(section, decimal-leading-zero) ".";
-  color: var(--accent-gold);
-  font-family: var(--font-serif);
-  font-style: italic;
-  font-weight: 400;
-  font-size: 0.7em;
-  letter-spacing: 0.02em;
-  flex: 0 0 auto;
-}
-
 /* ───────── Button (used for CTAs like Download résumé) ─────────
    Classic minimal-academic button: outlined; inverts to ink/paper on hover. */
 
@@ -343,50 +278,6 @@ nav.site-nav .brand {
   transition: background-color var(--t-fast), color var(--t-fast);
 }
 .button:hover { background: var(--ink); color: var(--paper); text-decoration: none; }
-
-/* ───────── Decorative hero rule ─────────
-   A small horizontal ornament: thin gold line + a serif "§" or "*".
-   Sits between the name and the tagline. The eye reads "this isn't
-   a Bootstrap template; someone made a choice here." */
-
-.hero-rule {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  margin: 0.4rem 0 0.6rem;
-  color: var(--accent-gold);
-  font-family: var(--font-serif);
-  font-size: 0.95rem;
-  letter-spacing: 0.04em;
-}
-.hero-rule::before,
-.hero-rule::after {
-  content: "";
-  flex: 0 0 28px;
-  height: 1px;
-  background: var(--accent-gold);
-  opacity: 0.55;
-}
-.hero-rule::after { flex: 1 1 auto; max-width: 120px; }
-
-/* ───────── Skill-category label ─────────
-   Small uppercase label that sits above each chip group in the
-   "What I work with" section. Deliberately NOT a heading (so it
-   doesn't interfere with the numbered-sections h2 counter) and
-   deliberately muted so the eye stays on the chips. */
-
-.skill-category {
-  font-family: var(--font-sans);
-  font-size: 0.78rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--muted);
-  margin: 1.5rem 0 0.5rem;
-}
-.skill-category:first-of-type {
-  margin-top: 0.5rem;  /* tighter just below the section h2 */
-}
 
 /* ───────── Misc ───────── */
 
