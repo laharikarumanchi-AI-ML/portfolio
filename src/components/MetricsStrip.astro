@@ -1,0 +1,60 @@
+---
+import { landingMetrics } from '../data/metrics';
+---
+<section class="metrics-strip" aria-label="By the numbers">
+  <ul>
+    {landingMetrics.map((m, i) => (
+      <li>
+        {i > 0 && <span class="sep" aria-hidden="true">·</span>}
+        <span class="value">{m.value}</span>
+        <span class="label">{m.label}</span>
+      </li>
+    ))}
+  </ul>
+</section>
+
+<style>
+  .metrics-strip {
+    margin-block: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+    background:
+      linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%);
+  }
+  .metrics-strip ul {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: center;
+    gap: 0.5rem 1rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-family: var(--font-mono);
+    font-size: 0.95rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .metrics-strip li {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.4rem;
+  }
+  .value {
+    color: var(--accent-teal);
+    font-weight: 600;
+  }
+  .label {
+    color: var(--muted);
+    font-family: var(--font-sans);
+    font-size: 0.85rem;
+  }
+  .sep {
+    color: var(--rule);
+    margin-right: 0.6rem;
+  }
+  @media (max-width: 560px) {
+    .metrics-strip ul { gap: 0.4rem 0.8rem; }
+    .label { font-size: 0.78rem; }
+  }
+</style>
