@@ -2,12 +2,12 @@
 import { getCollection } from 'astro:content';
 import BaseLayout from '../layouts/BaseLayout.astro';
 import Hero from '../components/Hero.astro';
+import MetricsStrip from '../components/MetricsStrip.astro';
 import ProjectCard from '../components/ProjectCard.astro';
 import PostCard from '../components/PostCard.astro';
 
 const projects = (await getCollection('projects'));
 const featured = projects.find(p => p.data.featured);
-// Two non-featured "Selected work" teasers, newest first.
 const selected = projects
   .filter(p => !p.data.featured)
   .sort((a, b) => (b.data.year - a.data.year) || (a.data.order - b.data.order))
@@ -20,85 +20,64 @@ const posts = (await getCollection('blog', ({ data }) => !data.draft))
 <BaseLayout title="Lahari Karumanchi — ML projects + agents"
             description="Third-year CS student. Code-as-action agents, RAG, classical ML. Recruiting for Summer 2026 ML/SWE internships.">
   <Hero />
+  <MetricsStrip />
 
-  <div>
-    {featured && (
-      <section id="featured">
-        <h2>Featured</h2>
-        <ProjectCard entry={featured} variant="featured" />
-      </section>
-    )}
-
-    {selected.length > 0 && (
-      <section id="selected" style="margin-top:3rem;">
-        <h2>Selected work</h2>
-        <div style="display:grid; gap:1.5rem;">
-          {selected.map(p => <ProjectCard entry={p} variant="compact" />)}
-        </div>
-        <p style="margin-top:1.25rem;">
-          <a href="/projects" class="button-sm button-sm-quiet">
-            See all {projects.length} projects →
-          </a>
-        </p>
-      </section>
-    )}
-
-    <section id="skills" style="margin-top:3rem;">
-      <h2>What I work with</h2>
-
-      <p class="skill-category">Languages</p>
-      <ul class="chips">
-        <li>Python</li>
-        <li>Java</li>
-        <li>C</li>
-        <li>SQL</li>
-      </ul>
-
-      <p class="skill-category">ML / data</p>
-      <ul class="chips">
-        <li>PyTorch</li>
-        <li>scikit-learn</li>
-        <li>XGBoost</li>
-        <li>sentence-transformers</li>
-        <li>FAISS</li>
-        <li>Pandas</li>
-        <li>NumPy</li>
-      </ul>
-
-      <p class="skill-category">Tools</p>
-      <ul class="chips">
-        <li>Git</li>
-        <li>Docker</li>
-        <li>FastAPI</li>
-        <li>Streamlit</li>
-        <li>Jupyter</li>
-        <li>pytest</li>
-        <li>GitHub Actions</li>
-      </ul>
-
-      <p class="skill-category">Areas</p>
-      <ul class="chips">
-        <li>RAG</li>
-        <li>Code-as-action agents</li>
-        <li>Vector search</li>
-        <li>Honest evaluation</li>
-        <li>NLP</li>
-      </ul>
+  {featured && (
+    <section id="featured">
+      <h2>Featured</h2>
+      <ProjectCard entry={featured} variant="featured" />
     </section>
+  )}
 
-    {posts.length > 0 && (
-      <section id="writing">
-        <h2 style="margin-top:3rem;">Recent writing</h2>
-        <div style="display:grid; gap:1.5rem;">
-          {posts.map(p => <PostCard entry={p} />)}
-        </div>
-      </section>
-    )}
-
-    <section id="about" style="margin-top:3rem;">
-      <h2>About</h2>
-      <p>Third-year CS @ CVR College of Engineering, recruiting for Summer 2026 ML/SWE internships. <a href="/about">More →</a></p>
-      <p style="margin-top:0.75rem;"><a href="/resume.pdf" class="button">Download résumé →</a></p>
+  {selected.length > 0 && (
+    <section id="selected" style="margin-top:3rem;">
+      <h2>Selected work</h2>
+      <div style="display:grid; gap:1.5rem;">
+        {selected.map(p => <ProjectCard entry={p} variant="compact" />)}
+      </div>
+      <p style="margin-top:1.25rem;">
+        <a href="/projects" class="button-sm button-sm-quiet">
+          See all {projects.length} projects →
+        </a>
+      </p>
     </section>
-  </div>
+  )}
+
+  <section id="skills" style="margin-top:3rem;">
+    <h2>What I work with</h2>
+    <p class="skill-category">Languages</p>
+    <ul class="chips">
+      <li>Python</li><li>Java</li><li>C</li><li>SQL</li>
+    </ul>
+    <p class="skill-category">ML / data</p>
+    <ul class="chips">
+      <li>PyTorch</li><li>scikit-learn</li><li>XGBoost</li>
+      <li>sentence-transformers</li><li>FAISS</li><li>Pandas</li><li>NumPy</li>
+    </ul>
+    <p class="skill-category">Tools</p>
+    <ul class="chips">
+      <li>Git</li><li>Docker</li><li>FastAPI</li><li>Streamlit</li>
+      <li>Jupyter</li><li>pytest</li><li>GitHub Actions</li>
+    </ul>
+    <p class="skill-category">Areas</p>
+    <ul class="chips">
+      <li>RAG</li><li>Code-as-action agents</li><li>Vector search</li>
+      <li>Honest evaluation</li><li>NLP</li>
+    </ul>
+  </section>
+
+  {posts.length > 0 && (
+    <section id="writing" style="margin-top:3rem;">
+      <h2>Recent writing</h2>
+      <div style="display:grid; gap:1.5rem;">
+        {posts.map(p => <PostCard entry={p} />)}
+      </div>
+    </section>
+  )}
+
+  <section id="about" style="margin-top:3rem;">
+    <h2>About</h2>
+    <p>Third-year CS @ CVR College of Engineering, Hyderabad. Recruiting for Summer 2026 ML/SWE internships. <a href="/about">More →</a></p>
+    <p style="margin-top:0.75rem;"><a href="/resume.pdf" class="button">Download résumé →</a></p>
+  </section>
 </BaseLayout>

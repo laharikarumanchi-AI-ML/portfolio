@@ -354,3 +354,14 @@ nav.site-nav {
 
 .muted { color: var(--muted); }
 .sm    { font-size: 0.85rem; }
+
+.skill-category {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 1.5rem 0 0.5rem;
+}
+.skill-category:first-of-type { margin-top: 0.5rem; }
