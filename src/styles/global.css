@@ -168,9 +168,9 @@ a.card:hover .card-title { text-decoration-thickness: 2px; }
 }
 .card-index-title {
   margin: 0;
-  font-family: var(--font-serif);
   font-weight: 600;
   font-size: 1.3rem;
+  letter-spacing: -0.015em;
 }
 .card-index-title a {
   color: var(--accent-teal);
@@ -178,16 +178,15 @@ a.card:hover .card-title { text-decoration-thickness: 2px; }
   text-underline-offset: 2px;
 }
 .card-index-year {
-  font-family: var(--font-serif);
   font-style: italic;
   font-size: 0.9rem;
   color: var(--muted);
   flex: 0 0 auto;
 }
 .card-index-headline {
-  font-family: var(--font-serif);
   font-size: 1.2rem;
-  color: var(--accent-gold);
+  font-weight: 600;
+  color: var(--accent-teal);
   margin: 0.5rem 0;
 }
 .card-index-actions {
@@ -253,7 +252,6 @@ nav.site-nav {
   align-items: baseline;
   gap: 0.75rem 1.25rem;
   padding-block: var(--space-3);
-  font-family: var(--font-serif);
   border-bottom: 1px solid var(--rule);
 }
 nav.site-nav .brand {

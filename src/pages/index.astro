@@ -21,7 +21,7 @@ const posts = (await getCollection('blog', ({ data }) => !data.draft))
             description="Third-year CS student. Code-as-action agents, RAG, classical ML. Recruiting for Summer 2026 ML/SWE internships.">
   <Hero />
 
-  <div class="numbered-sections">
+  <div>
     {featured && (
       <section id="featured">
         <h2>Featured</h2>
