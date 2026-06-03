@@ -247,19 +247,41 @@ a.card:hover .card-title { text-decoration-thickness: 2px; }
 /* ───────── Responsive nav ───────── */
 
 nav.site-nav {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(229, 229, 229, 0.6);
+  padding-block: 0.75rem;
+  margin-inline: calc(-1 * var(--space-2));
+  padding-inline: var(--space-2);
+}
+.site-nav-inner {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: 0.75rem 1.25rem;
-  padding-block: var(--space-3);
-  border-bottom: 1px solid var(--rule);
+  font-family: var(--font-sans);
 }
-nav.site-nav .brand {
-  font-weight: 600;
+.site-nav .brand {
+  font-weight: 700;
+  font-size: 0.95rem;
+  letter-spacing: -0.01em;
   flex: 1 1 100%;
+  text-decoration: none;
+  color: var(--ink);
 }
+.site-nav .links { display: flex; flex-wrap: wrap; gap: 0.75rem 1.25rem; }
+.site-nav .links a {
+  font-size: 0.9rem;
+  text-decoration: none;
+  color: var(--muted);
+}
+.site-nav .links a:hover { color: var(--ink); }
 @media (min-width: 560px) {
-  nav.site-nav .brand { flex: 0 0 auto; margin-right: auto; }
+  .site-nav .brand { flex: 0 0 auto; margin-right: auto; font-size: 1rem; }
 }
 
 /* ───────── Button (used for CTAs like Download résumé) ─────────
