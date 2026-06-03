@@ -61,7 +61,7 @@ body {
   margin-inline: auto;
 }
 
-main.wide { max-width: var(--wide-width); }
+main.wide { max-width: var(--shell-width); }
 
 h1, h2, h3, h4 {
   font-family: var(--font-sans);
