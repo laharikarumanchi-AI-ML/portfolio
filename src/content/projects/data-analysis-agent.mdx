@@ -266,7 +266,95 @@ It's also a reminder that the agent is bounded by the base model's domain reason
 
 ## Architecture
 
-{/* TODO: 1200w */}
+![Architecture diagram: User feeds question and dataset to the Agent Loop (orchestrator.py), which fans out to llm_client.py for chat calls, sandbox.py for Jupyter kernel execution, and trace.py for the JSON step log.](/diagrams/da-agent-architecture.svg)
+
+The whole agent is six files. The diagram shows the runtime fan-out: a CLI or Streamlit front-end feeds a question + dataset path into `orchestrator.py`, which sits in a `for step in range(MAX_STEPS)` loop and farms the three side-effects out — LLM calls to `llm_client.py`, kernel execution to `sandbox.py`, and structured logging to `trace.py`. There's no scheduler, no graph, no message bus. It's a straight Python loop with three injected collaborators.
+
+### Modules
+
+| Module | One-line responsibility | The non-obvious bit |
+|---|---|---|
+| `agent/llm_client.py` | Provider-agnostic chat client. | `GroqClient` and `GeminiClient` both expose `chat(messages, **kwargs) -> str`. Groq honors `Retry-After`. Gemini scrubs the API key from `resp.url` before `raise_for_status()` can put it in an exception message. |
+| `agent/sandbox.py` | Wraps `jupyter_client.KernelManager`. | `wait_for_ready()` after kernel start so the first execute doesn't race the kernel's initial `status: busy`. Single per-cell deadline (not per-message timeout). Drains residual IOPub messages after interrupt so the *next* cell doesn't see ghost output. |
+| `agent/orchestrator.py` | The agent loop. | Parses `<code>…</code>` / `<answer>…</answer>` with a small regex pair. Retries up to `MAX_RETRIES_PER_QUESTION = 3` on cell failures. Hard `MAX_STEPS = 10` ceiling. |
+| `agent/trace.py` | JSON log of every (prompt, response, code, output) step. | Used by both the eval harness (post-hoc analysis) and the Streamlit demo (live "show your work" UI). |
+| `agent/cli.py` | `python -m agent ask --data X "Q"`. | The single-question entry point. Reads the API key from env, picks a provider, runs the loop, prints the answer. |
+| `agent/eval/run_dabench.py` | DABench eval driver. | Joins questions + labels, runs the agent per task with `temperature=0`, scores with the official scorer, checkpoints after every task so a mid-run quota crash is resumable. |
+
+### The LLMClient protocol
+
+The simplest possible interface that keeps the orchestrator provider-agnostic:
+
+```python
+from typing import Protocol
+
+class LLMClient(Protocol):
+    def chat(self, messages: list[dict], **kwargs) -> str: ...
+```
+
+One method. The orchestrator calls `llm.chat(messages, **call_kwargs)` and gets a string back. Whether that string came from Groq or Gemini, whether the underlying transport retried four times before succeeding, whether the Gemini wrapper had to throttle for 3.7 seconds first — none of that leaks out. The eval runner picks a concrete implementation at startup; the orchestrator never sees a provider name.
+
+This shape paid off the day Groq's free-tier TPM started biting halfway through a run. The fix was a one-line change in the eval runner — `client = GeminiClient(api_key, min_seconds_between_calls=4.0)` instead of `client = GroqClient(api_key)` — and a re-run. No orchestrator changes. No prompt changes. The Gemini wrapper's `_to_gemini_format()` method handles the message-shape translation internally (Gemini wants `system_instruction` separately from the conversation; consecutive same-role turns have to be merged).
+
+### Retry budgets (with the actual numbers)
+
+The two clients have different cost models, so they have different retry profiles. Both budgets are set as class constants on the client — easy to find, easy to change.
+
+**Groq.** `MAX_ATTEMPTS = 5` per `chat()` call. Backoff is `Retry-After`-aware: if the server returns `Retry-After: 60`, the client sleeps 60s (capped at `MAX_BACKOFF_SECONDS = 60.0`) before the next attempt. If there's no header, it falls back to exponential backoff (`BACKOFF_BASE_SECONDS = 2.0 * 2^attempt`, capped). Retries fire on `429`, `500`, `502`, `503`, `504` — the transient errors. Anything else raises immediately.
+
+**Gemini.** Same `MAX_ATTEMPTS = 5` and same backoff math. The wrinkle is `min_seconds_between_calls`: the free tier of `gemini-2.0-flash` is 15 RPM, so the eval runner instantiates the client with `min_seconds_between_calls=4.0`. The client tracks `_last_call_monotonic` and sleeps to enforce the gap before every request. That keeps a normal run *under* the limit, so retries are only spent on real transient errors instead of trying to recover from rate limits I was creating myself.
+
+There's a second Gemini-specific detail: the API takes the key as a URL query parameter (`?key=…`), and `raise_for_status()` builds its error message from `resp.url`, which would leak the key into every exception, log line, and pickled error in the results JSON. The client sanitizes `resp.url` to `?key=[REDACTED]` *before* calling `raise_for_status()`. You can see the scrub at work in [`subset50-gemini.json`](https://github.com/laharikarumanchi-AI-ML/superpowers/blob/main/agent/eval/results/subset50-gemini.json) — every error message says `?key=[REDACTED]`, not the real key. That redaction is the only thing standing between an error log and a key on PasteBin.
+
+### The orchestrator state machine
+
+`run()` in `orchestrator.py` is the entire agent loop, minus the imports:
+
+```python
+for step in range(MAX_STEPS):
+    response = llm.chat(messages, **call_kwargs)
+    parsed = parse_llm_response(response)
+
+    if parsed.answer is not None:
+        trace.record(...)
+        return AgentResult(True, parsed.answer, trace, step + 1)
+
+    if parsed.code is None:
+        # Malformed: nudge the model and continue.
+        messages.append({"role": "assistant", "content": response})
+        messages.append({"role": "user", "content":
+            "Please respond with EITHER <code>...</code> OR <answer>...</answer>."})
+        continue
+
+    exec_result = sandbox.execute(parsed.code)
+    observation = _format_observation(exec_result)
+    trace.record(...)
+
+    failed = exec_result.exception is not None or exec_result.timed_out
+    if failed:
+        if not retry_on_failure:
+            return AgentResult(False, None, trace, step + 1, failure_reason="cell failed (retry disabled)")
+        if retries_used >= MAX_RETRIES_PER_QUESTION:
+            return AgentResult(False, None, trace, step + 1, failure_reason="exceeded retry budget")
+        retries_used += 1
+
+    messages.append({"role": "assistant", "content": response})
+    messages.append({"role": "user", "content": observation})
+
+return AgentResult(False, None, trace, MAX_STEPS, failure_reason="max steps reached")
+```
+
+Five exits: answered, no-answer-cell-malformed (continue), cell-failed-retry-disabled, retry-budget-exceeded, max-steps-reached. The single `for/else` shape is intentional — it's easier to read than a `while` with a flag.
+
+The `retry_on_failure=False` branch is the ablation knob the README mentions. The plan is to run the same 80-task subset with retries off, to quantify how much of the 75% ABQ comes from the model's self-correction versus first-shot accuracy. That run is on the roadmap; the API budget isn't there yet.
+
+### What the sandbox is doing that a subprocess can't
+
+The sandbox is 80 lines. Most of those lines are about exactly two things: kernel readiness and message draining.
+
+`start_new_kernel(kernel_name="python3")` returns `(KernelManager, KernelClient)`. Calling `execute()` immediately produces flaky output — the kernel's first emitted message is its own `status: busy` from kernel-startup, and `get_iopub_msg` can race with the cell's actual output. The `wait_for_ready(timeout=30)` call after construction holds until the comm channel is fully open, so the first execute behaves the same as every subsequent execute.
+
+After an interrupt fires (because a cell hit the per-cell deadline), there are usually one or two residual `iopub` messages queued — the cell's last `stdout` write, the kernel's final `status: idle`. If the sandbox doesn't drain those before returning, the *next* cell's `get_iopub_msg` loop picks them up and attributes them to the wrong cell. `_drain_until_idle()` reads until it sees the matching `status: idle` for the interrupted `msg_id`, or until a 5-second hard deadline expires. It's a small piece of plumbing that took an embarrassing amount of debugging to find.
 
 ### Test suite
 
