@@ -86,15 +86,29 @@ const tocHeadings = headings.filter(h => h.depth === 2 || h.depth === 3);
 
     headingEls.forEach(h => observer.observe(h));
 
-    // 3. Smooth-scroll on TOC link click + history.pushState for back-button support.
+    // 3. Smooth-scroll on TOC link click + history.pushState for back-button
+    //    support + post-jump focus move (so keyboard users continue from the
+    //    target heading, not the TOC link they just left).
+    //
+    //    Smooth-scroll degrades to 'auto' under prefers-reduced-motion per
+    //    WCAG 2.3.3 — vestibular/migraine-sensitive users see an instant jump.
+    const reducedMotionMQ = window.matchMedia('(prefers-reduced-motion: reduce)');
     links.forEach(a => {
       a.addEventListener('click', (e) => {
         const slug = a.dataset.tocSlug!;
         const target = document.getElementById(slug);
         if (target) {
           e.preventDefault();
-          target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          target.scrollIntoView({
+            behavior: reducedMotionMQ.matches ? 'auto' : 'smooth',
+            block: 'start',
+          });
           history.pushState(null, '', `#${slug}`);
+          // Make the heading focusable in-place, then move focus there
+          // without scrolling again. preventScroll: true honors the smooth
+          // scroll we just kicked off.
+          target.setAttribute('tabindex', '-1');
+          target.focus({ preventScroll: true });
         }
       });
     });
