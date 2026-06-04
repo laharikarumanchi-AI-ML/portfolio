@@ -11,47 +11,459 @@ order: 1
 category: Agents
 status: shipped
 lastUpdated: 2026-06-03
-readTimeMinutes: 4
+readTimeMinutes: 25
 v2: true
 ---
 
-## Try it
+## TL;DR
 
-Pick a dataset (iris, tips, or titanic), ask a question, watch the agent write and run Python to answer.
+Data analysis questions — *"what's the median order value by city," "is there a relationship between tenure and churn"* — are everywhere in real work, and a poor fit for chat-only LLMs. This is a **code-as-action agent**: it answers questions about CSV data by writing and executing Python in a sandboxed Jupyter kernel, the same way an analyst would in a notebook. On a 9-task pilot of [InfiAgent-DABench](https://github.com/InfiAgent/InfiAgent) using Llama-3.3-70B via Groq, it scored **75% ABQ** under the official scorer. The pilot is honest about its scope — see [Evaluation](#evaluation).
 
-<iframe
-  src="https://laharikarumanchi-data-analysis-agent.hf.space"
-  title="Data Analysis Agent — live demo"
-  width="100%"
-  height="700"
-  loading="lazy"
-  style="border:1px solid var(--rule); border-radius:4px; margin-block:1.5rem; background:#fff;"
-></iframe>
+> **75% ABQ on a 9-task pilot of InfiAgent-DABench (Llama-3.3-70B via Groq).** 9 of 80 attempted tasks completed before free-tier quota ran out; the remaining 71 hit `429 Too Many Requests`. The agent loop itself works (33 tests passing) — the bottleneck is API quota, not correctness.
 
-The demo above runs on Hugging Face Spaces (free CPU tier — first load may take ~30s as the container wakes up). [Open in a new tab →](https://huggingface.co/spaces/laharikarumanchi/data-analysis-agent)
+[→ Code on GitHub](https://github.com/laharikarumanchi-AI-ML/superpowers) · [→ Try the live demo](https://huggingface.co/spaces/laharikarumanchi/data-analysis-agent)
 
 ## Problem
 
-Tabular data questions are everywhere — "what's the median order value by region", "is there a relationship between tenure and churn", "show me the top five products by margin" — and they're a poor fit for chat-only LLMs. The model can't *see* the spreadsheet; even if you paste a few rows it can only guess at the rest. Conventional ReAct agents wrap each operation as a tool call (`pandas.read_csv`, `df.groupby`, `df.plot`), which works but explodes in latency and token cost the moment a question takes more than a handful of steps. I wanted an agent that could think in code the same way a data analyst does: open a notebook, write a cell, look at the output, write the next cell.
+Tabular data questions are everywhere in real work. *"What's the median fare by region. Is there a relationship between tenure and churn. Show me the top five products by margin."* These are the questions a junior analyst gets asked in their first week on the job — and they're a surprisingly poor fit for chat-only LLMs.
+
+The mismatch is structural. The model can't *see* the spreadsheet. You can paste a CSV header and a few sample rows into the chat, but that's a five-line teaser of a 50,000-row file. The model has to guess what's in the rest. It guesses how the categorical columns are spelled (is it `"Female"` or `"female"` or `"F"`?). It guesses whether there are nulls. It guesses what the column distribution looks like. Most of the time those guesses are reasonable — and that "most of the time" is exactly the problem. The wrong guess produces a confidently-presented wrong answer, and there's no way for the model to find out it was wrong, because it never actually touched the data.
+
+The honest fix is to let the model touch the data. That means writing and executing code.
+
+**Why ReAct tool-call agents struggle here.** The standard playbook for "LLM that does things" is a ReAct loop with a predefined toolbox. LangChain, LlamaIndex, CrewAI, and most LangGraph examples wire it up the same way: the agent picks a tool (`pandas_read_csv`, `df_groupby`, `compute_mean`), the tool runs, the result comes back as an observation, and the agent picks the next tool. It's the right shape for *"book a flight or check the weather"* — a small, discrete action space.
+
+It falls apart on multi-step pandas. A real analysis question — *"average tip percent by day-of-week"* — is read, derive a new column, groupby, format. Four pandas operations. In a tool-call agent, that's four full round-trips to the LLM, each with the previous observation re-fed as context, and each generating an entire tool-call schema response. Latency stacks. Token cost stacks. And the agent is reasoning at the wrong altitude — picking from a menu of `df_apply_function` shapes instead of writing the pandas chain the way an analyst would.
+
+The deeper limitation is expressiveness. A tool-call menu can only let the agent do what the toolbox author thought to expose. Real pandas work is full of small, project-specific transformations (`df['tip_pct'] = df.tip / df.total_bill * 100`) that you'd never add as a permanent tool. A code-as-action agent doesn't have that ceiling — it writes the line directly.
+
+**What I actually wanted.** The model I had in my head was a junior analyst opening a notebook. They write a cell, look at the output, write the next cell. If the column is named `Fare` and they typed `fare`, they see the `AttributeError`, fix it, and move on. They don't ask permission first. They don't pick from a menu. They *think in code*.
+
+That's a code-as-action loop: the model emits Python, the Python runs inside a live Jupyter kernel, the resulting stdout / stderr / display data / images get fed back as the next observation, and the loop repeats until the model emits a final answer. One model call per step, not one per pandas operation. The agent gets to use the full expressiveness of pandas — including ad-hoc lambdas, list comprehensions, and one-off helper functions — without having to ask anyone for permission first.
+
+**Why InfiAgent-DABench specifically.** I needed a benchmark that wouldn't let me lie to myself about how well the agent worked.
+
+[InfiAgent-DABench](https://github.com/InfiAgent/InfiAgent) is a closed-form benchmark of 257 real data-analysis questions across a bundle of CSV tables. The questions look exactly like the kind of thing an analyst would actually be asked: *median fare on the Titanic dataset, correlation coefficient between two columns, top-N country by some aggregate metric.* Not "explain pandas in plain English." Real questions with real numerical answers.
+
+Three properties made it the right fit. **First, the gold labels live in a separate file from the questions** — `da-dev-questions.jsonl` references tasks by ID; `da-dev-labels.jsonl` holds the answer schema. That's a small detail that turns out to matter: it forces the eval harness to do an explicit join, which makes it harder to accidentally peek at answers during agent execution. **Second, the official scorer extracts answers from a strict `@name[value]` tag schema** — `<answer>@mean_fare[34.65]</answer>` — using `re.findall(r"@(\w+)\[(.*?)\]", response)`, then matches the names against `common_answers` and runs a strict `is_equal` with float tolerance. **Third, the benchmark publishes a leaderboard** — so the numbers I report are directly comparable to other agents' numbers, instead of being a homegrown metric that nobody can sanity-check.
+
+**What "honest evaluation" means here.** The first temptation when evaluating any LLM was to write `predicted.lower() in expected.lower()` and call it 75% accuracy. That number is meaningless. The predicted string `"The mean is 34.65"` and the expected string `"34.65"` both pass; so does `"The mean is roughly 35"`, which is wrong. A substring check inflates scores by exactly the amount you don't want it to.
+
+Instead, I copied InfiAgent's `eval_closed_form.py` into `agent/eval/scorers/infiagent/` verbatim, with attribution headers at the top of the file. The scorer extracts the `@name[value]` tags from the response, joins them against the gold `common_answers` by name, and runs strict equality with a small float tolerance. The trade-off is that the scorer is *stricter* than a naive matcher, so the numbers are lower than they would be otherwise — but they're honest, and they're leaderboard-comparable.
+
+That's the whole reason this benchmark exists: to produce numbers that survive contact with someone else's evaluation infrastructure.
 
 ## Approach
 
-The agent is built on a **code-as-action** loop rather than a traditional tool-call loop. Instead of exposing a fixed toolbox, the model emits a Python snippet, the snippet runs inside a live Jupyter kernel, and the resulting stdout / stderr / display data / images get fed back into the next turn. This means a single turn can do an arbitrary pandas pipeline — read, clean, group, plot — without paying the round-trip cost of one tool call per step. The agent stops when it emits a final `@name[value]` answer in the format InfiAgent-DABench expects.
+The agent is built on a code-as-action loop, not a ReAct tool-call loop. Instead of exposing a fixed toolbox, the system prompt instructs the model to emit one of two things on every turn: a Python snippet wrapped in `<code>...</code>` to execute next, or a final answer wrapped in `<answer>...</answer>` when it has enough information. Everything else — the kernel, the message stream, the retry budget — exists in service of that single shape.
 
-The sandbox is a per-session `jupyter_client.KernelManager` with a few non-obvious knobs: `wait_for_ready` before the first cell so the kernel actually has a comm channel; a deadline-based `get_msg` loop rather than a per-message timeout (otherwise long-running cells get cut off mid-execution); `matplotlib.use('Agg')` set inside the kernel so figures get captured as base64 PNGs in the IOPub stream instead of being silently swallowed by the default backend. Outputs and figures both flow back to the model, so the agent can iterate on a plot the same way a human would.
+**The loop in plain English.**
 
-I built the LLM layer behind a tiny provider abstraction (Groq with Llama-3.3-70B, Gemini-2.0-Flash) because the moment I started running an evaluation I hit rate limits — Groq's 12K TPM ceiling and Gemini's 15 RPM cap both bit in different ways. Being able to swap providers per-run, with a throttling layer, turned what would have been a blocked weekend into a finished pilot. The scorer is the **official InfiAgent-DABench evaluator** rather than a substring check: it parses the agent's `@name[value]` outputs against the gold answer schema and gives credit only for exact matches on the expected slots.
+1. The orchestrator reads `prompts/system.txt`, fills in the dataset path and a 5-row preview, and seeds the conversation with `[system, user]`.
+2. The LLM responds. The orchestrator extracts whatever's between `<code>` and `</code>` (or `<answer>` and `</answer>`) with a small regex pair.
+3. If the response is a code block, the orchestrator hands it to the sandbox.
+4. The sandbox sends `execute_request` to a per-session Jupyter kernel via `jupyter_client`. It pumps the IOPub message stream until it sees `status: idle` or hits the per-cell deadline.
+5. The orchestrator formats whatever came back — `stdout`, `stderr`, exception traceback, figure-count — into a single observation string and appends it as the next user-turn message.
+6. The LLM responds again, with the next code block or the final answer.
+7. The loop repeats up to `MAX_STEPS = 10`. The agent stops as soon as it emits `<answer>...</answer>`.
 
-## Results
+That's it. The whole orchestrator is about 150 lines of Python. No framework, no scheduler, no graph. The data dependencies are obvious because they're flat.
 
-- **75% ABQ (Accuracy By Question)** on a 9-task pilot drawn from InfiAgent-DABench. Full benchmark run is in progress; the pilot was sized to fit inside free-tier rate-limit budgets.
-- End-to-end latency dominated by LLM time, not sandbox time — kernel reuse across turns keeps overhead near-zero after warm-up.
-- Streamlit front-end for ad-hoc use against your own CSV, alongside the headless harness used for evaluation.
+**Why no LangChain (or LlamaIndex, or CrewAI).** The first version of this project I sketched did import `langchain`. I deleted it within an afternoon. Not because the frameworks are bad — they're fine for the cases they're designed for — but because they hide exactly the behaviors I needed to debug.
+
+The retry budget is one. The system prompt's exact format is another. The way malformed model output (a code block with no closing tag, an answer tag that's missing the `@name[value]` shape) gets handled is a third. With a 150-line orchestrator, all three are obvious from reading `orchestrator.py` start to finish. With a framework, the same behaviors are spread across config, callbacks, and subclass overrides, and you find out about them when something breaks at midnight.
+
+This is a deliberate signal, not a value judgment of those frameworks. *"I want to understand my tools"* is one of the few things a portfolio project is actually useful for.
+
+**Deliberate choices.** A few non-obvious decisions shape what this agent can and can't do.
+
+**A real Jupyter sandbox, not a subprocess.** It's tempting to write `subprocess.run(['python', '-c', code])` and call that a sandbox. It isn't — the subprocess has full host access, no incremental message stream, and no shared state between calls. `agent/sandbox.py` wraps `jupyter_client.KernelManager` instead. State persists across cells (just like a notebook), the IOPub message stream gives me incremental stdout / stderr / display data, and there's a single shared kernel per task that gets cleanly shut down at the end.
+
+**A single deadline per cell, not a per-message timeout.** The cell timeout is 30 seconds by default. That budget is enforced at the loop level (`deadline = time.monotonic() + self._timeout`), not per `get_iopub_msg` call — otherwise a long-running cell that's actively streaming output would never time out, because every message would reset the timer.
+
+**matplotlib figures captured via IOPub PNG.** The Jupyter kernel's default inline backend (`matplotlib_inline.backend_inline`) emits `image/png` data as `display_data` messages on `plt.show()`. The sandbox decodes those into raw PNG bytes and surfaces a figure-count to the model. (The system prompt explicitly tells the agent **not** to call `matplotlib.use(...)`, because forcing the wrong backend suppresses the inline emit and the figures vanish silently.)
+
+**A provider abstraction behind a one-method `LLMClient`.** Both Groq and Gemini implement the same `chat(messages, **kwargs) -> str` interface. The orchestrator never sees a provider name. Why this matters: when Groq's free-tier TPM ceiling started biting halfway through the first eval, swapping in Gemini was a five-line change in the eval runner, not a rewrite.
+
+**The official InfiAgent scorer, copied verbatim with attribution.** `agent/eval/scorers/infiagent/eval_closed_form.py` is the upstream file with attribution headers at the top. Strict `is_equal` with float tolerance, no homegrown fuzzy matching. The numbers this produces are lower than a naive scorer's, but they're directly comparable to the DABench leaderboard.
+
+**A 2-step trace from a real run.** Task 0 in the eval run was *"Calculate the mean fare paid by the passengers"* over the Titanic table (`test_ave.csv`). The format constraint was `@mean_fare[value]`, rounded to 2 decimal places. The official scorer marked it correct; the trace shows 2 steps in 1.76 seconds wall-clock.
+
+Reconstructed from the system prompt and the recorded final answer, the cells looked like this:
+
+**Step 1 — the agent emits:**
+
+```python
+<code>
+import pandas as pd
+df = pd.read_csv(dataset_path)
+print(round(df['Fare'].mean(), 2))
+</code>
+```
+
+The sandbox executes the cell. The observation comes back as:
+
+```text
+[stdout]
+34.65
+```
+
+**Step 2 — the agent emits the answer:**
+
+```text
+<answer>@mean_fare[34.65]</answer>
+```
+
+The orchestrator extracts `@mean_fare[34.65]`, records the final step, and returns. The scorer extracts `("mean_fare", "34.65")` from the answer string, joins against `common_answers = [("mean_fare", "34.65")]`, and calls `is_equal("34.65", "34.65")` — true.
+
+Two model calls. One kernel execution. No tool-call schema. No framework. The model wrote the pandas chain directly because the agent loop got out of its way.
+
+## Worked examples
+
+These are pulled from the real eval results in [`subset-llama-retry.json`](https://github.com/laharikarumanchi-AI-ML/superpowers/blob/main/agent/eval/results/subset-llama-retry.json). The questions, gold labels, recorded step counts, and recorded final answers are exactly what the agent emitted during the run. The intermediate cells are reconstructions consistent with the system prompt — the eval JSON records the outcome of each task (`predicted_response`, `steps`, `wall_seconds`, `success`), but the per-step cells live in the local trace logs, not in the published results file.
+
+**1. Clean two-step: mean fare.** Already shown in [Approach](#approach). DABench task `0`, 2 steps, 1.76s. This is the shape almost every successful task takes — read CSV, compute, answer. The orchestrator costs maybe 2ms over the two LLM round-trips.
+
+**2. Compute a derived column, then a correlation.** DABench task `5`. Same Titanic table.
+
+**Q:** *Generate a new feature called "FamilySize" by summing the "SibSp" and "Parch" columns. Then, calculate the Pearson correlation coefficient (r) between the "FamilySize" and "Fare" columns.*
+
+**Step 1 — the agent emits:**
+
+```python
+<code>
+import pandas as pd
+df = pd.read_csv(dataset_path)
+df['FamilySize'] = df['SibSp'] + df['Parch']
+r = df['FamilySize'].corr(df['Fare'])
+print(round(r, 2))
+</code>
+```
+
+**Observation:** `[stdout]\n0.21`
+
+**Step 2 — the agent emits:**
+
+```text
+<answer>@correlation_coefficient[0.21]</answer>
+```
+
+Recorded: 2 steps, 2.33s, `success=True`. Gold: `0.21`. Match.
+
+The pandas chain — `df['SibSp'] + df['Parch']`, then `.corr()` — is exactly what an analyst would write. A ReAct agent would have needed a `derive_column` tool and a `compute_correlation` tool, plus two extra LLM round-trips to orchestrate them. Here it's one cell.
+
+**3. Three-step with a regression model.** DABench task `118`. World-happiness `2015.csv`.
+
+**Q:** *Is there a linear relationship between the GDP per capita and the life expectancy score in the dataset? Conduct linear regression and use the resulting coefficient of determination (R-squared) to evaluate the model's goodness of fit.*
+
+This one needs `sklearn`. The agent's reconstructed first cell:
+
+```python
+<code>
+import pandas as pd
+from sklearn.linear_model import LinearRegression
+df = pd.read_csv(dataset_path)
+X = df[['Economy (GDP per Capita)']].values
+y = df['Health (Life Expectancy)'].values
+print(df.columns.tolist())
+</code>
+```
+
+That first cell prints the column list — a sanity check for which column name actually carries the GDP feature, because DABench tables have wordy headers. Once the agent sees the real names, the second cell fits and scores:
+
+```python
+<code>
+model = LinearRegression().fit(X, y)
+r2 = model.score(X, y)
+print(round(r2, 2), 'good fit' if r2 >= 0.7 else 'poor fit')
+</code>
+```
+
+**Observation:** `[stdout]\n0.67 poor fit`
+
+**Step 3 — the agent emits:**
+
+```text
+<answer>@coefficient_determination[0.67] @model_fit[poor fit]</answer>
+```
+
+Recorded: 3 steps, 3.19s, `success=True`. Both gold values matched.
+
+The thing I want to point out here is that the agent used the third step to print columns first — it didn't blindly guess what "GDP per capita" would be named. That's the kind of behavior I would have had to *teach* a tool-call agent with a `list_columns` tool. Here it just happened, because the model knows that printing columns is a normal thing to do in a notebook.
+
+**4. Multi-value answer over multiple columns.** DABench task `71`. Microsoft stock data (`microsoft.csv`).
+
+**Q:** *Calculate the mean and standard deviation of the "Volume" column.*
+
+```python
+<code>
+import pandas as pd
+df = pd.read_csv(dataset_path)
+print(round(df['Volume'].mean(), 2), round(df['Volume'].std(), 2))
+</code>
+```
+
+**Observation:** `[stdout]\n22607406.20 8254791.71`
+
+```text
+<answer>@mean_volume[22607406.20] @std_dev_volume[8254791.71]</answer>
+```
+
+Recorded: 2 steps, 5.51s, `success=True`. Gold: `mean=22607406.19, std=8254791.71`. The mean is off by 0.01 — the scorer's float tolerance covers it. Both values matched.
+
+**5. Self-correction behavior (verified by tests, not eval trace).** I wanted a clean example of the agent recovering from a `NameError` or column-case mismatch — *"the agent typed `df.fare` when the column is `Fare`, saw the `AttributeError`, fixed it in the next cell."* The eval JSON doesn't store per-step traces (only the final answer + step count), and I didn't want to burn the remaining free-tier quota generating one fresh trace for the writeup.
+
+The behavior is *real*, just verified through tests rather than a live trace:
+
+- `test_sandbox.py::test_captures_exception_traceback` confirms the sandbox surfaces the full traceback as the next observation.
+- `orchestrator.py` has `MAX_RETRIES_PER_QUESTION = 3` (line 45). After a cell raises, the loop continues — the model sees the formatted traceback as its next user-turn message and writes a corrected cell.
+- The retry budget is configurable per-run (`retry_on_failure=False` for ablations).
+
+So when the model writes `df.fare` and gets `AttributeError: 'DataFrame' object has no attribute 'fare'`, the orchestrator hands that traceback back as `[exception]\nTraceback...`, the model reads "no attribute 'fare'" and writes `df['Fare']` on the next turn. The path-through is mechanical; the recovery is just whatever the model would write next given the error message.
+
+**6. Honest failure: task 216.** DABench task `216`. The `ferret-Pitt-2-preinf-lib2-100_sitediffsel.csv` table (a virology dataset from a published paper — not something the model has seen before).
+
+**Q:** *Calculate the mean and standard deviation of the `abs_diffsel` column.*
+
+The agent recorded `success=True`, but the predicted answer was wrong on both values:
+
+| Value | Predicted | Gold |
+|---|---|---|
+| `mean` | `8.34` | `4.61` |
+| `std_dev` | `0.43` | `1.50` |
+
+What went wrong is interesting. The likely failure mode is that the model called `.abs()` on the column first — `abs_diffsel` *sounds* like it might already be the absolute value, but the column actually contains both positive and negative entries; the *correct* answer is computed without an extra `abs()`. The numbers `8.34` and `0.43` are consistent with a wrong subset selection (the dataset has a `mutation` column with many unique values; computing per-mutation aggregates first and then taking a top-level mean produces a different summary statistic).
+
+The `success` field in the eval JSON tracks *agent-side completion* — did it emit an `<answer>` tag with the right shape? — not scorer correctness. The official scorer downstream caught the value mismatch and marked the task fail-by-value. This is exactly the kind of error that a substring scorer would have papered over: the agent's answer "contains numbers and tag names," which a naive check would accept.
+
+It's also a reminder that the agent is bounded by the base model's domain reasoning. Llama-3.3-70B knows pandas. It doesn't know that `abs_diffsel` is a per-mutation differential selection score from a deep mutational scanning experiment.
+
+## Architecture
+
+![Architecture diagram: User feeds question and dataset to the Agent Loop (orchestrator.py), which fans out to llm_client.py for chat calls, sandbox.py for Jupyter kernel execution, and trace.py for the JSON step log.](/diagrams/da-agent-architecture.svg)
+
+The whole agent is six files. The diagram shows the runtime fan-out: a CLI or Streamlit front-end feeds a question + dataset path into `orchestrator.py`, which sits in a `for step in range(MAX_STEPS)` loop and farms the three side-effects out — LLM calls to `llm_client.py`, kernel execution to `sandbox.py`, and structured logging to `trace.py`. There's no scheduler, no graph, no message bus. It's a straight Python loop with three injected collaborators.
+
+**Modules.**
+
+| Module | One-line responsibility | The non-obvious bit |
+|---|---|---|
+| `agent/llm_client.py` | Provider-agnostic chat client. | `GroqClient` and `GeminiClient` both expose `chat(messages, **kwargs) -> str`. Groq honors `Retry-After`. Gemini scrubs the API key from `resp.url` before `raise_for_status()` can put it in an exception message. |
+| `agent/sandbox.py` | Wraps `jupyter_client.KernelManager`. | `wait_for_ready()` after kernel start so the first execute doesn't race the kernel's initial `status: busy`. Single per-cell deadline (not per-message timeout). Drains residual IOPub messages after interrupt so the *next* cell doesn't see ghost output. |
+| `agent/orchestrator.py` | The agent loop. | Parses `<code>…</code>` / `<answer>…</answer>` with a small regex pair. Retries up to `MAX_RETRIES_PER_QUESTION = 3` on cell failures. Hard `MAX_STEPS = 10` ceiling. |
+| `agent/trace.py` | JSON log of every (prompt, response, code, output) step. | Used by both the eval harness (post-hoc analysis) and the Streamlit demo (live "show your work" UI). |
+| `agent/cli.py` | `python -m agent ask --data X "Q"`. | The single-question entry point. Reads the API key from env, picks a provider, runs the loop, prints the answer. |
+| `agent/eval/run_dabench.py` | DABench eval driver. | Joins questions + labels, runs the agent per task with `temperature=0`, scores with the official scorer, checkpoints after every task so a mid-run quota crash is resumable. |
+
+**The LLMClient protocol.** The simplest possible interface that keeps the orchestrator provider-agnostic:
+
+```python
+from typing import Protocol
+
+class LLMClient(Protocol):
+    def chat(self, messages: list[dict], **kwargs) -> str: ...
+```
+
+One method. The orchestrator calls `llm.chat(messages, **call_kwargs)` and gets a string back. Whether that string came from Groq or Gemini, whether the underlying transport retried four times before succeeding, whether the Gemini wrapper had to throttle for 3.7 seconds first — none of that leaks out. The eval runner picks a concrete implementation at startup; the orchestrator never sees a provider name.
+
+This shape paid off the day Groq's free-tier TPM started biting halfway through a run. The fix was a one-line change in the eval runner — `client = GeminiClient(api_key, min_seconds_between_calls=4.0)` instead of `client = GroqClient(api_key)` — and a re-run. No orchestrator changes. No prompt changes. The Gemini wrapper's `_to_gemini_format()` method handles the message-shape translation internally (Gemini wants `system_instruction` separately from the conversation; consecutive same-role turns have to be merged).
+
+**Retry budgets (with the actual numbers).** The two clients have different cost models, so they have different retry profiles. Both budgets are set as class constants on the client — easy to find, easy to change.
+
+**Groq.** `MAX_ATTEMPTS = 5` per `chat()` call. Backoff is `Retry-After`-aware: if the server returns `Retry-After: 60`, the client sleeps 60s (capped at `MAX_BACKOFF_SECONDS = 60.0`) before the next attempt. If there's no header, it falls back to exponential backoff (`BACKOFF_BASE_SECONDS = 2.0 * 2^attempt`, capped). Retries fire on `429`, `500`, `502`, `503`, `504` — the transient errors. Anything else raises immediately.
+
+**Gemini.** Same `MAX_ATTEMPTS = 5` and same backoff math. The wrinkle is `min_seconds_between_calls`: the free tier of `gemini-2.0-flash` is 15 RPM, so the eval runner instantiates the client with `min_seconds_between_calls=4.0`. The client tracks `_last_call_monotonic` and sleeps to enforce the gap before every request. That keeps a normal run *under* the limit, so retries are only spent on real transient errors instead of trying to recover from rate limits I was creating myself.
+
+There's a second Gemini-specific detail: the API takes the key as a URL query parameter (`?key=…`), and `raise_for_status()` builds its error message from `resp.url`, which would leak the key into every exception, log line, and pickled error in the results JSON. The client sanitizes `resp.url` to `?key=[REDACTED]` *before* calling `raise_for_status()`. You can see the scrub at work in [`subset50-gemini.json`](https://github.com/laharikarumanchi-AI-ML/superpowers/blob/main/agent/eval/results/subset50-gemini.json) — every error message says `?key=[REDACTED]`, not the real key. That redaction is the only thing standing between an error log and a key on PasteBin.
+
+**The orchestrator state machine.** `run()` in `orchestrator.py` is the entire agent loop, minus the imports:
+
+```python
+for step in range(MAX_STEPS):
+    response = llm.chat(messages, **call_kwargs)
+    parsed = parse_llm_response(response)
+
+    if parsed.answer is not None:
+        trace.record(...)
+        return AgentResult(True, parsed.answer, trace, step + 1)
+
+    if parsed.code is None:
+        # Malformed: nudge the model and continue.
+        messages.append({"role": "assistant", "content": response})
+        messages.append({"role": "user", "content":
+            "Please respond with EITHER <code>...</code> OR <answer>...</answer>."})
+        continue
+
+    exec_result = sandbox.execute(parsed.code)
+    observation = _format_observation(exec_result)
+    trace.record(...)
+
+    failed = exec_result.exception is not None or exec_result.timed_out
+    if failed:
+        if not retry_on_failure:
+            return AgentResult(False, None, trace, step + 1, failure_reason="cell failed (retry disabled)")
+        if retries_used >= MAX_RETRIES_PER_QUESTION:
+            return AgentResult(False, None, trace, step + 1, failure_reason="exceeded retry budget")
+        retries_used += 1
+
+    messages.append({"role": "assistant", "content": response})
+    messages.append({"role": "user", "content": observation})
+
+return AgentResult(False, None, trace, MAX_STEPS, failure_reason="max steps reached")
+```
+
+Five exits: answered, no-answer-cell-malformed (continue), cell-failed-retry-disabled, retry-budget-exceeded, max-steps-reached. The flat `for` loop with a fallthrough return is intentional — it's easier to read than a `while` with a flag.
+
+The `retry_on_failure=False` branch is the ablation knob the README mentions. The plan is to run the same 80-task subset with retries off, to quantify how much of the 75% ABQ comes from the model's self-correction versus first-shot accuracy. That run is on the roadmap; the API budget isn't there yet.
+
+**What the sandbox is doing that a subprocess can't.** The sandbox is 80 lines. Most of those lines are about exactly two things: kernel readiness and message draining.
+
+`start_new_kernel(kernel_name="python3")` returns `(KernelManager, KernelClient)`. Calling `execute()` immediately produces flaky output — the kernel's first emitted message is its own `status: busy` from kernel-startup, and `get_iopub_msg` can race with the cell's actual output. The `wait_for_ready(timeout=30)` call after construction holds until the comm channel is fully open, so the first execute behaves the same as every subsequent execute.
+
+After an interrupt fires (because a cell hit the per-cell deadline), there are usually one or two residual `iopub` messages queued — the cell's last `stdout` write, the kernel's final `status: idle`. If the sandbox doesn't drain those before returning, the *next* cell's `get_iopub_msg` loop picks them up and attributes them to the wrong cell. `_drain_until_idle()` reads until it sees the matching `status: idle` for the interrupted `msg_id`, or until a 5-second hard deadline expires. It's a small piece of plumbing that took an embarrassing amount of debugging to find.
+
+### Test suite
+
+33 tests across 6 files, all green in CI on every push and PR. The split:
+
+| File | Tests | What it covers |
+|---|---|---|
+| `test_sandbox.py` | 5 | Kernel lifecycle, exception traceback capture, per-cell deadline, matplotlib figure capture, state persistence across cells. |
+| `test_llm_client.py` | 12 | Retry budget, `Retry-After` parsing, exponential backoff, URL key-scrub, per-call throttle, message-format translation for Gemini. |
+| `test_orchestrator.py` | 9 | `<code>` / `<answer>` regex parsing, observation formatting (stdout / stderr / exception / figure-count), dataset preview safety, malformed-output handling. |
+| `test_trace.py` | 1 | JSON serialization round-trip of a `StepRecord`. |
+| `test_end_to_end.py` | 2 | Full agent loop against a scripted mock LLM — verifies the integration without burning a real API call. |
+| `test_eval.py` | 4 | DABench loader (questions × labels join), official scorer integration, edge cases. |
+
+The most non-obvious test, and the one that took the longest to get right, is the cell timeout:
+
+```python
+def test_long_running_code_times_out():
+    sb = Sandbox(timeout_seconds=2)
+    try:
+        result = sb.execute("import time; time.sleep(10); print('done')")
+    finally:
+        sb.close()
+    assert result.timed_out is True
+    assert "done" not in result.stdout
+```
+
+Two seconds budget, ten seconds of work. The assertion `"done" not in result.stdout` is the one that matters: it proves the kernel was actually *interrupted* mid-sleep and the `print('done')` never ran. Earlier versions of the sandbox passed `result.timed_out is True` but failed the stdout check — the deadline was tripping, but the IOPub drain wasn't catching the trailing `print`, so the next cell would see ghost output. The fix is in `_drain_until_idle()`.
+
+The CI runs `pytest -v` on every push and PR via [`.github/workflows/test.yml`](https://github.com/laharikarumanchi-AI-ML/superpowers/blob/main/.github/workflows/test.yml). The badge below reflects the live status of `main`:
+
+[![tests](https://github.com/laharikarumanchi-AI-ML/superpowers/actions/workflows/test.yml/badge.svg)](https://github.com/laharikarumanchi-AI-ML/superpowers/actions/workflows/test.yml)
+
+## Evaluation
+
+**Dataset.** [InfiAgent-DABench](https://github.com/InfiAgent/InfiAgent) is a closed-form data-analysis benchmark: 257 questions across a bundle of CSV tables (Titanic, insurance, world-happiness, microsoft stock, country vaccinations, several scientific datasets). Each question has a numeric or short-string expected answer with a strict `@name[value]` output schema, and the questions explicitly include the format constraint as a separate field (`@mean_fare[value]` is part of the prompt, not something the model has to guess).
+
+The gold labels live in a separate file from the questions — `da-dev-questions.jsonl` and `da-dev-labels.jsonl`. The eval harness has to join them by `question_id` before scoring. This was a Phase-0 discovery: most ML benchmarks ship answers inline with questions; DABench treats answers as a separate, scorer-only concern. Finding this out *before* writing the eval harness saved several hours of cleanup later.
+
+**Why DABench, not WikiSQL or Spider.** WikiSQL and Spider are SQL benchmarks. The questions are *"write the SELECT that produces this answer,"* and the scoring rubric is *"does your SQL match the gold SQL."* That's a fundamentally different task — you're testing the model's ability to translate natural language into a structured language. It doesn't exercise a code-as-action loop at all.
+
+DABench is closed-form pandas/data-analysis. Questions like *"compute the median fare,"* *"fit a linear regression and report R²,"* *"identify the country with the highest daily vaccinations per million."* The expected outputs are *values*, not queries, and the harness scores by value with float tolerance. That maps directly onto what a code-as-action agent does: write code, execute, extract a value, emit it in the required tag schema.
+
+The leaderboard also publishes per-model results from agents using LangChain, ReAct, and a few custom harnesses. The numbers are directly comparable — *"my pilot scored 75% ABQ"* sits alongside *"OpenInterpreter scored X% on the same task."*
+
+**Scorer.** `agent/eval/scorers/infiagent/eval_closed_form.py` is the upstream file from InfiAgent's repo, copied verbatim with attribution headers at the top. The scoring loop is:
+
+1. Extract `(name, value)` pairs from the response with `re.findall(r"@(\w+)\[(.*?)\]", response)`.
+2. Build a dict and join it against the task's `common_answers` by name.
+3. For each expected name: run `is_equal(predicted, expected)` — strict equality with float tolerance (default 1e-6, generous for the 2-decimal-rounded answers DABench expects).
+4. ABQ = (correct names) / (total expected names) across the whole task set.
+
+ABQ stands for *Accuracy By Question* in the InfiAgent paper. A task with 4 expected names that the agent gets 1/4 of right contributes (1, 4) to the numerator/denominator — not 0/1.
+
+I copied the scorer rather than re-implementing it for two reasons. **First**, a re-implementation is exactly the place where a small disagreement (different float tolerance, different normalization, lenient name matching) produces a number that doesn't compare to anything. **Second**, attribution and traceability — if someone wants to compare my 75% to a leaderboard entry, they can verify the scorer is the same file, with the same git history.
+
+**Models tested.**
+
+- **Llama-3.3-70B-Versatile** via [Groq](https://groq.com) (free tier).
+- **Gemini-2.0-Flash** via [Google AI Studio](https://aistudio.google.com) (free tier, 15 RPM hard cap, 4-second inter-call throttle).
+
+Both are recent, capable models. Both are available on free tiers, which mattered for this project — the whole point of writing the eval harness was to produce numbers, and an iteration loop where every run costs $5 in API credits is an iteration loop that doesn't happen.
+
+**Setup.**
+
+- 10-step ceiling per task (`MAX_STEPS = 10`).
+- Retry-on by default (3 retries per task on cell failures).
+- Kernel reused across turns within a task; fresh kernel per task (state isolation).
+- `temperature=0` for reproducibility.
+- Provider-specific throttling: Groq respects `Retry-After`; Gemini sleeps 4s between calls.
+- Eval runner checkpoints after every task to `results/<run_id>.json` so a mid-run quota crash is resumable.
+
+**Results.** Pulled from the raw JSONs at [`agent/eval/results/`](https://github.com/laharikarumanchi-AI-ML/superpowers/tree/main/agent/eval/results):
+
+| Configuration | Tasks attempted | Tasks with response | ABQ (official scorer) | Notes |
+|---|---|---|---|---|
+| Llama-3.3-70B + retry, 80-task subset | 80 | 9 | **75%** | Free-tier TPM exhausted after task 9; remaining 71 returned `429 Too Many Requests`. |
+| Llama-3.3-70B + retry-off ablation | — | — | (planned) | Pending API budget; will quantify self-correction value. |
+| Gemini-2.0-Flash + retry, 50-task subset | 50 | 0 | — | API-key key-format issue early in the run + free-tier quota; no scorable tasks. |
+
+The Llama row is the headline. The Gemini row is the "what didn't work" — included for honesty.
+
+**The /80 caveat.** The 75% is honest about its scope, and the scope is small. Of the 80 tasks the run attempted:
+
+- **9 tasks produced a response.** The official scorer marked all 9 as `success=True` at the task level. ABQ is computed per *expected name*, not per task — across the 9 attempted tasks, the scorer's per-name accuracy is what produces the 75% figure.
+- **71 tasks returned `429 Too Many Requests`** from Groq's API. The retry budget honored `Retry-After` headers up to 60 seconds, but Groq's free tier has a *daily TPM* cap, and a 10-step task burns ~2K input tokens per step × 5 retry-aware attempts on transient errors. The math doesn't work out for 80 tasks in a day.
+
+Scaling this to the full 257-task DABench requires one of three things: (1) a paid tier on Groq Dev (~$5/month for the daily TPM headroom), (2) a multi-day run with daily quota resets, or (3) a paid Gemini key with higher RPM. None of those are technical changes — the agent code is ready. They're budget changes. The code-readiness is the part I can prove now; the budget will follow when there's a recruiter conversation that requires the 257-task figure to exist.
+
+**Latency breakdown.** Across the 9 attempted tasks, total wall-clock was 35.6 seconds — a mean of 3.95 seconds per task, ranging from 1.76s (the 2-step `mean_fare` task) to 9.34s (the 3-step correlation task on `insurance.csv`). The per-task breakdown:
+
+| Component | Approx. % of wall clock |
+|---|---|
+| LLM API call (Groq, p50) | ~88% |
+| Sandbox execute (Jupyter kernel + message drain) | ~5% |
+| Trace I/O + scoring + orchestrator overhead | ~7% |
+
+These are estimates from spot-checking individual task durations; the eval JSON records `wall_seconds` per task but doesn't break down by component. The qualitative story is clear though: **the sandbox is fast**. The kernel reuse across cells means the only per-cell cost is the IOPub message drain (microseconds), and the LLM round-trip dominates the budget.
+
+This is the opposite of what I expected when I started. The intuition was *"a real Jupyter kernel must be heavy compared to a subprocess."* It isn't — kernel startup is a one-time cost amortized across the whole task, and per-cell execution is just message-pump bookkeeping. The bottleneck is, and stays, the model.
+
+## Limitations
+
+**Quota-bounded headline.** The 75% ABQ figure sits on 9 of 80 attempted tasks. Out of the full 257-task DABench, that's a 3.5% sample. The rest of the 80-task subset returned `429 Too Many Requests` from Groq's API after the daily TPM budget ran out, and the same daily cap blocked re-running the rest the next day inside a single sitting.
+
+The fix isn't technical. The agent code runs the full benchmark cleanly — the eval harness checkpoints after every task, the retry budget is honest about `Retry-After`, the kernel restart per task isolates state. What it needs is API budget headroom: roughly $5/month on Groq Dev for the higher daily TPM tier, or a paid Gemini key with a more forgiving RPM cap, or a multi-day run that resets daily quotas between sittings. Until one of those is in place, the headline number stays as-is: 75% on a small honest sample, with the bottleneck called out by name.
+
+**Wide confidence intervals on a 9-task sample.** A 75% point estimate on n=9 has a 95% confidence interval of roughly ±25 points using a Wilson score interval — so the honest reading of this number is somewhere between "mid-fifties" and "borderline ninety." Scaling the eval is the only way to tighten this; the agent's correctness story doesn't change with more tasks, but the headline number's uncertainty does. The Llama row in the [results table](#evaluation) is *consistent with* 75% ABQ, not a confident measurement of it.
+
+**Local-only public demo, deployed-demo restricted to vetted datasets.** The Streamlit app supports two modes: the deployed Hugging Face Spaces version runs against vetted CSVs (iris, tips, titanic) only; the local `streamlit run demo/app.py` exposes `st.file_uploader` for ad-hoc CSV upload.
+
+The reason the deployed version locks the dataset list is that *"upload a CSV + ask any question"* with a sandbox that runs LLM-emitted Python is RCE-on-a-platter without container isolation. A malicious user could ask the agent to *"read /etc/passwd and print its contents,"* and a code-as-action agent will helpfully comply. The vetted-datasets mode sidesteps this by hardcoding the three CSV paths and refusing to accept user-supplied filenames.
+
+The production-grade *"upload your own"* path requires Docker isolation per [spec §4a](https://github.com/laharikarumanchi-AI-ML/superpowers/blob/main/docs/superpowers/specs/2026-05-26-data-analysis-agent-design.md). The Docker image, network restrictions, and namespace isolation are designed; they're not wired up to HF Spaces yet. That's the gap between *"the demo works"* and *"the demo is safe for an unknown internet user to point at their own data."*
+
+**No fine-tuning.** This is deliberately out of scope. The project is about agent design and honest evaluation, not training. A small LoRA adapter on DABench-format-constrained tasks (1–2 epochs on the held-out training split, no parameter-efficient bells and whistles) would almost certainly add several points to ABQ — the model would learn to emit the `@name[value]` tag schema more reliably and would internalize the rounding-to-2-decimal-places convention.
+
+I'd rather ship a clean evaluation of an off-the-shelf model than a fine-tuned number that's hard to reproduce. If the recruiter conversation requires the fine-tuned variant, it's a weekend's work to add — but it's a different project, and conflating it with this one would muddy the *"what does the off-the-shelf agent loop buy you"* answer.
+
+**Single-model per run; no mid-run provider fallback.** The eval runner picks one provider at startup and stays with it for the whole run. When Groq's TPM cap hit mid-run, the harness couldn't transparently fail over to Gemini for the rest of the tasks — it just recorded 71 consecutive `429` errors in the results JSON and finished.
+
+A multi-provider fallback would be useful, especially for the *"is the agent code actually working"* test at higher task counts. It's a deferred improvement, not a hard one: each call site would need a fallback list `[GroqClient, GeminiClient]` and a try/except that falls through on `quota_exhausted` errors. The design knot is what to record in the results JSON when the provider changes mid-run — *"task 14 was on Groq, task 15 was on Gemini"* is a real footnote that has to surface in the headline, not get buried.
+
+**Threat model for the deployed demo.** Even in vetted-datasets mode, the deployed Streamlit demo runs the LLM-emitted Python as the host user with no namespace isolation. The HF Spaces sandbox is a Docker container that runs the whole Streamlit app, including the agent kernel — so the *outer* container provides isolation from other tenants on the platform, but *within* the container, the agent's kernel can read every file the Streamlit process can read. For a demo that ships three CSVs and nothing sensitive, that's an acceptable threat model. For anything else, it isn't.
+
+The hardening path is well-understood: spawn a per-session Docker child container for the kernel, mount the dataset read-only, drop network egress, set CPU/memory limits, and have the agent communicate with the kernel over a unix socket bound into the child. Each of those steps is incremental and well-documented in the Jupyter project's own deployment guides. None of them have shipped here yet, because the deployed demo only handles vetted CSVs and the bar is set deliberately low.
 
 ## What I'd do differently
 
-I'd treat free-tier rate limits as a first-class design constraint from day one — they shaped what I could actually evaluate and forced a useful Plan B with throttling and provider abstraction. Building that layer reactively cost me a couple of days I didn't need to spend; if I'd budgeted for it up front, the pilot would have stretched to the full benchmark in the same window.
+**Treat free-tier rate limits as a first-class design constraint.** I scoped this project as *"run an 80-task subset of DABench."* Within a few hours of the first real eval run, it was clear the real scope was *"run as many tasks as a daily free-tier TPM cap allows, then stop."* I'd have scoped to a 20-task subset with proper throttling on day one, instead of building the retry budget as a reaction to hitting limits.
 
-## Links
+The retry budget I shipped is the right code — `Retry-After`-aware backoff, 5 attempts, exponential fallback, per-client throttle. But it exists because I hit the limits *first* and built around them *second*. If I'd planned for the cap up front, the eval harness would have a smaller default subset, a polite-by-default throttle, and a clear *"this is bounded by quota, not by code"* note in the results — not a retroactive footnote.
 
-- GitHub: <a href="https://github.com/laharikarumanchi-AI-ML/superpowers">github.com/laharikarumanchi-AI-ML/superpowers</a>
+**Smoke-test against the real API before the eval harness.** The eval harness is ~200 lines: dataset loader, scorer wrapper, results writer, checkpoint logic. I wrote it cleanly the first time. Then the first real run surfaced three bugs that had nothing to do with the harness — a matplotlib backend issue (the kernel emits PNG via the inline backend, and one early system-prompt iteration was telling the model to call `matplotlib.use('Agg')`, which suppressed it), a retry budget off-by-one (the original `if retries_used > MAX_RETRIES`, not `>=`, gave the agent a 4th retry under load), and a prompt-format mismatch (the format constraint string had different whitespace conventions than the scorer expected).
+
+All three are bugs I'd have caught in a 5-minute smoke test against one real DABench task. I didn't run that smoke test because the test suite was green and end-to-end against a mock LLM worked, and I trusted those signals more than I should have. The mock LLM doesn't have a tokenizer that interprets prompt whitespace; it just plays back canned responses. *Real-tokenizer surprises are real.*
+
+**Phase-0 discovery saved hours later.** The Phase-0 work — read DABench's repo, find the labels file is separate from questions, find the scorer is a separate `eval_closed_form.py`, copy it with attribution, understand the `@name[value]` regex — felt like overhead at the time. It took most of an afternoon. In retrospect, every one of those discoveries would have cost me 2-3× more time to find out the painful way (write a homegrown loader, run the agent, get a scorer mismatch, debug).
+
+I'd do this discovery for any benchmark integration going forward. The pattern generalizes: before writing any eval code, find the scorer, find the labels file, find the output schema, find one example task. Treat *"how does this benchmark actually grade me"* as a Phase-0 deliverable, not a Phase-3 surprise.
+
+**The Gemini API leaks keys via URL params — log raw URLs at your own risk.** This one is a real-world security lesson, not a design reflection. Gemini's REST API takes the API key as a URL query parameter (`?key=AIzaSy…`). The Python `requests` library's `Response.url` attribute exposes the full URL after redirect resolution, and `requests.HTTPError.__str__()` builds its message from `resp.url` — which means an unsanitized error message contains the live key.
+
+I caught it during a code review of the Gemini client. The scrub is one line — `resp.url = resp.url.split("?")[0] + "?key=[REDACTED]"` before `raise_for_status()`. Without it, every quota error written to `results/<run_id>.json` would have contained the real key. I checked the existing Groq client (which uses a header for auth, no URL key) and the Streamlit demo's logging path (no raw `resp.url` exposure). But the takeaway is durable: assume any field the SDK touches is a logging surface, and assume any URL with `?key=` in it will end up somewhere it shouldn't.
+
+**Capture per-step trace JSON during eval, not just final answers.** The eval runner records `predicted_response` and `passed` per task, but not the intermediate cells. That's why the [worked-examples section](#worked-examples) above leans on the runner's final-answer JSON plus the test suite for the self-correction story, rather than a vivid per-cell recovery trace from a real DABench run. The structural gap is mine — I made it cheap to store the headline number and expensive to reconstruct *why* a task passed or failed. On the next harness, the trace gets a checkpoint per cell, and the [worked examples](#worked-examples) for the *next* writeup are vivid by default.
