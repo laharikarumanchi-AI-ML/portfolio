@@ -54,14 +54,25 @@ html {
   text-rendering: optimizeLegibility;
 }
 
+/* Body is now the viewport. Width clamping happens per-element below
+   (nav-inner, main, footer) so the sticky nav + page chrome can span
+   the full viewport while content stays readable in a 1200px shell. */
 body {
   margin: 0;
-  padding: var(--space-2);
-  max-width: var(--content-width);
-  margin-inline: auto;
 }
 
-main.wide { max-width: var(--shell-width); }
+main {
+  max-width: var(--content-width);   /* 720px default — text reading */
+  margin-inline: auto;
+  padding-inline: var(--space-2);
+}
+main.wide { max-width: var(--shell-width); }  /* 1200px — Stripe/Vercel standard */
+
+footer {
+  max-width: var(--shell-width);
+  margin-inline: auto;
+  padding-inline: var(--space-2);
+}
 
 /* In-page anchors (#featured, #selected, etc.) must clear the sticky nav.
    The nav is ~3rem tall with backdrop-blur; 5rem buys headroom + breathing room. */
@@ -305,7 +316,6 @@ nav.site-nav {
   -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid rgba(229, 229, 229, 0.6);
   padding-block: 0.75rem;
-  margin-inline: calc(-1 * var(--space-2));
   padding-inline: var(--space-2);
 }
 .site-nav-inner {
@@ -314,6 +324,10 @@ nav.site-nav {
   align-items: baseline;
   gap: 0.75rem 1.25rem;
   font-family: var(--font-sans);
+  /* Cap the nav content at shell width so brand + links align with main. */
+  max-width: var(--shell-width);
+  margin-inline: auto;
+  width: 100%;
 }
 .site-nav .brand {
   font-weight: 700;
