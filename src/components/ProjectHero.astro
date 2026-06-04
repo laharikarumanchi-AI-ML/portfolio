@@ -1,0 +1,94 @@
+---
+import type { CollectionEntry } from 'astro:content';
+
+interface Props {
+  entry: CollectionEntry<'projects'>;
+}
+const { entry } = Astro.props;
+const d = entry.data;
+
+const eyebrowParts = [
+  d.category.toUpperCase(),
+  String(d.year),
+  d.status.toUpperCase(),
+];
+const eyebrow = eyebrowParts.join(' · ');
+
+const lastUpdatedFmt = d.lastUpdated
+  ? d.lastUpdated.toISOString().slice(0, 10)
+  : null;
+---
+<section class="project-hero">
+  <div class="project-hero-inner">
+    <p class="eyebrow">{eyebrow}</p>
+    <h1>{d.title}</h1>
+    <p class="oneliner">{d.oneLiner}</p>
+    <p class="headline-number">{d.headlineNumber}</p>
+    <p class="meta">
+      {d.readTimeMinutes && (
+        <span><span aria-hidden="true">📖</span> {d.readTimeMinutes} min read</span>
+      )}
+      {lastUpdatedFmt && (
+        <>
+          {d.readTimeMinutes && <span class="sep" aria-hidden="true">·</span>}
+          <span><span aria-hidden="true">⚙</span> updated <time datetime={lastUpdatedFmt}>{lastUpdatedFmt}</time></span>
+        </>
+      )}
+    </p>
+    <ul class="chips" aria-label="Tech stack">
+      {d.techStack.map(t => <li>{t}</li>)}
+    </ul>
+    <div class="cta-row">
+      {d.githubUrl && <a href={d.githubUrl} class="button-sm" rel="noopener">Code →</a>}
+      {d.demoUrl  && <a href={d.demoUrl}  class="button-sm" rel="noopener">Live demo →</a>}
+    </div>
+  </div>
+</section>
+
+<style>
+  .project-hero {
+    margin-block: var(--space-3) var(--space-4);
+    padding: var(--space-4) var(--space-3);
+    border-radius: var(--radius);
+    background: var(--gradient-hero);
+    border: 1px solid var(--rule);
+  }
+  .project-hero-inner { max-width: 760px; }
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.14em;
+    color: var(--accent-violet-deep);
+    margin: 0 0 var(--space-2);
+  }
+  .project-hero h1 {
+    margin: 0 0 var(--space-1);
+    font-size: 2.75rem;
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+  }
+  .oneliner {
+    font-size: 1.15rem;
+    color: var(--muted);
+    margin: var(--space-2) 0;
+  }
+  .headline-number {
+    font-family: var(--font-sans);
+    font-weight: 600;
+    font-size: 1.4rem;
+    color: var(--accent-teal);
+    margin: var(--space-2) 0 var(--space-1);
+    letter-spacing: -0.01em;
+  }
+  .meta {
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    color: var(--muted);
+    margin: 0 0 var(--space-2);
+  }
+  .meta .sep { margin: 0 0.5rem; }
+  .cta-row { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: var(--space-2); }
+  @media (max-width: 640px) {
+    .project-hero h1 { font-size: 2rem; }
+  }
+</style>
