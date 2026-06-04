@@ -18,7 +18,8 @@ const posts = (await getCollection('blog', ({ data }) => !data.draft))
   .slice(0, 2);
 ---
 <BaseLayout title="Lahari Karumanchi — ML projects + agents"
-            description="Third-year CS student. Code-as-action agents, RAG, classical ML. Recruiting for Summer 2026 ML/SWE internships.">
+            description="Third-year CS student. Code-as-action agents, RAG, classical ML. Recruiting for Summer 2026 ML/SWE internships."
+            wide={true}>
   <Hero />
   <MetricsStrip />
 
