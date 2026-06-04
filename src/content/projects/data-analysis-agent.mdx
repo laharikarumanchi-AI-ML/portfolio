@@ -15,43 +15,38 @@ readTimeMinutes: 4
 v2: true
 ---
 
-## Try it
+## TL;DR
 
-Pick a dataset (iris, tips, or titanic), ask a question, watch the agent write and run Python to answer.
-
-<iframe
-  src="https://laharikarumanchi-data-analysis-agent.hf.space"
-  title="Data Analysis Agent — live demo"
-  width="100%"
-  height="700"
-  loading="lazy"
-  style="border:1px solid var(--rule); border-radius:4px; margin-block:1.5rem; background:#fff;"
-></iframe>
-
-The demo above runs on Hugging Face Spaces (free CPU tier — first load may take ~30s as the container wakes up). [Open in a new tab →](https://huggingface.co/spaces/laharikarumanchi/data-analysis-agent)
+{/* TODO: 200w */}
 
 ## Problem
 
-Tabular data questions are everywhere — "what's the median order value by region", "is there a relationship between tenure and churn", "show me the top five products by margin" — and they're a poor fit for chat-only LLMs. The model can't *see* the spreadsheet; even if you paste a few rows it can only guess at the rest. Conventional ReAct agents wrap each operation as a tool call (`pandas.read_csv`, `df.groupby`, `df.plot`), which works but explodes in latency and token cost the moment a question takes more than a handful of steps. I wanted an agent that could think in code the same way a data analyst does: open a notebook, write a cell, look at the output, write the next cell.
+{/* TODO: 1000w */}
 
 ## Approach
 
-The agent is built on a **code-as-action** loop rather than a traditional tool-call loop. Instead of exposing a fixed toolbox, the model emits a Python snippet, the snippet runs inside a live Jupyter kernel, and the resulting stdout / stderr / display data / images get fed back into the next turn. This means a single turn can do an arbitrary pandas pipeline — read, clean, group, plot — without paying the round-trip cost of one tool call per step. The agent stops when it emits a final `@name[value]` answer in the format InfiAgent-DABench expects.
+{/* TODO: 1200w */}
 
-The sandbox is a per-session `jupyter_client.KernelManager` with a few non-obvious knobs: `wait_for_ready` before the first cell so the kernel actually has a comm channel; a deadline-based `get_msg` loop rather than a per-message timeout (otherwise long-running cells get cut off mid-execution); `matplotlib.use('Agg')` set inside the kernel so figures get captured as base64 PNGs in the IOPub stream instead of being silently swallowed by the default backend. Outputs and figures both flow back to the model, so the agent can iterate on a plot the same way a human would.
+## Worked examples
 
-I built the LLM layer behind a tiny provider abstraction (Groq with Llama-3.3-70B, Gemini-2.0-Flash) because the moment I started running an evaluation I hit rate limits — Groq's 12K TPM ceiling and Gemini's 15 RPM cap both bit in different ways. Being able to swap providers per-run, with a throttling layer, turned what would have been a blocked weekend into a finished pilot. The scorer is the **official InfiAgent-DABench evaluator** rather than a substring check: it parses the agent's `@name[value]` outputs against the gold answer schema and gives credit only for exact matches on the expected slots.
+{/* TODO: 1000w */}
 
-## Results
+## Architecture
 
-- **75% ABQ (Accuracy By Question)** on a 9-task pilot drawn from InfiAgent-DABench. Full benchmark run is in progress; the pilot was sized to fit inside free-tier rate-limit budgets.
-- End-to-end latency dominated by LLM time, not sandbox time — kernel reuse across turns keeps overhead near-zero after warm-up.
-- Streamlit front-end for ad-hoc use against your own CSV, alongside the headless harness used for evaluation.
+{/* TODO: 1200w */}
+
+### Test suite
+
+{/* TODO: 400w */}
+
+## Evaluation
+
+{/* TODO: 1500w */}
+
+## Limitations
+
+{/* TODO: 800w */}
 
 ## What I'd do differently
 
-I'd treat free-tier rate limits as a first-class design constraint from day one — they shaped what I could actually evaluate and forced a useful Plan B with throttling and provider abstraction. Building that layer reactively cost me a couple of days I didn't need to spend; if I'd budgeted for it up front, the pilot would have stretched to the full benchmark in the same window.
-
-## Links
-
-- GitHub: <a href="https://github.com/laharikarumanchi-AI-ML/superpowers">github.com/laharikarumanchi-AI-ML/superpowers</a>
+{/* TODO: 500w */}
