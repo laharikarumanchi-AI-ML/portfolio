@@ -1,0 +1,129 @@
+---
+import BaseLayout from './BaseLayout.astro';
+import ProjectHero from '../components/ProjectHero.astro';
+import TocSidebar from '../components/TocSidebar.astro';
+import type { CollectionEntry } from 'astro:content';
+import type { MarkdownHeading } from 'astro';
+
+interface Props {
+  entry: CollectionEntry<'projects'>;
+  headings: MarkdownHeading[];
+}
+const { entry, headings } = Astro.props;
+const d = entry.data;
+---
+<BaseLayout
+  title={`${d.title} — Lahari Karumanchi`}
+  description={d.oneLiner}
+  wide={true}
+>
+  <p style="font-size:0.85rem; color:var(--muted); margin:0 0 var(--space-1);">
+    <a href="/projects">← All projects</a>
+  </p>
+
+  <ProjectHero entry={entry} />
+
+  <div class="deepdive-shell">
+    <TocSidebar headings={headings}>
+      <div slot="actions" class="toc-actions">
+        {d.githubUrl && <a href={d.githubUrl} class="button-sm button-sm-quiet" rel="noopener">📦 GitHub</a>}
+        {d.demoUrl  && <a href={d.demoUrl}  class="button-sm button-sm-quiet" rel="noopener">🟢 Live demo</a>}
+      </div>
+    </TocSidebar>
+    <main class="deepdive-main">
+      <slot />
+    </main>
+  </div>
+</BaseLayout>
+
+<style>
+  .deepdive-shell {
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    gap: var(--space-4);
+    max-width: var(--shell-deepdive);
+    margin-inline: auto;
+    margin-top: var(--space-3);
+  }
+  .toc-sidebar {
+    position: sticky;
+    top: 4.5rem;
+    align-self: start;
+    max-height: calc(100vh - 6rem);
+    overflow-y: auto;
+  }
+  .deepdive-main {
+    max-width: 720px;
+  }
+  .toc-actions { display: flex; flex-direction: column; gap: 0.4rem; }
+
+  /* Prose styles scoped to the deep-dive main column */
+  .deepdive-main :global(h2) {
+    font-size: 2rem;
+    letter-spacing: -0.015em;
+    margin-block: var(--space-4) var(--space-2);
+    scroll-margin-top: 5rem;
+  }
+  .deepdive-main :global(h3) {
+    font-size: 1.35rem;
+    margin-block: var(--space-3) var(--space-1);
+    scroll-margin-top: 5rem;
+  }
+  .deepdive-main :global(p) {
+    font-size: 1.05rem;
+    line-height: 1.7;
+    margin-block: var(--space-2);
+  }
+  .deepdive-main :global(blockquote) {
+    margin-inline: 0;
+    padding: var(--space-2) var(--space-3);
+    border-left: 3px solid var(--accent-teal);
+    background: rgba(13, 148, 136, 0.05);
+    font-style: italic;
+    color: var(--muted);
+  }
+  .deepdive-main :global(table) {
+    width: 100%;
+    border-collapse: collapse;
+    margin-block: var(--space-3);
+    font-size: 0.95rem;
+  }
+  .deepdive-main :global(table th),
+  .deepdive-main :global(table td) {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--rule);
+    text-align: left;
+  }
+  .deepdive-main :global(table th) {
+    background: #fafafa;
+    font-weight: 600;
+    border-bottom: 2px solid var(--rule);
+  }
+  .deepdive-main :global(img),
+  .deepdive-main :global(svg) {
+    max-width: 100%;
+    height: auto;
+    margin-block: var(--space-3);
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+    padding: var(--space-2);
+    background: var(--paper);
+  }
+
+  /* Mobile: collapse the grid */
+  @media (max-width: 900px) {
+    .deepdive-shell {
+      grid-template-columns: 1fr;
+      gap: var(--space-2);
+    }
+    .toc-sidebar {
+      position: static;
+      max-height: none;
+      margin-bottom: var(--space-3);
+      border: 1px solid var(--rule);
+      border-radius: var(--radius);
+      padding: var(--space-2);
+    }
+    .deepdive-main { max-width: 100%; }
+  }
+</style>
