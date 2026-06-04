@@ -63,7 +63,74 @@ That's the whole reason this benchmark exists: to produce numbers that survive c
 
 ## Approach
 
-{/* TODO: 1200w */}
+The agent is built on a code-as-action loop, not a ReAct tool-call loop. Instead of exposing a fixed toolbox, the system prompt instructs the model to emit one of two things on every turn: a Python snippet wrapped in `<code>...</code>` to execute next, or a final answer wrapped in `<answer>...</answer>` when it has enough information. Everything else — the kernel, the message stream, the retry budget — exists in service of that single shape.
+
+### The loop in plain English
+
+1. The orchestrator reads `prompts/system.txt`, fills in the dataset path and a 5-row preview, and seeds the conversation with `[system, user]`.
+2. The LLM responds. The orchestrator extracts whatever's between `<code>` and `</code>` (or `<answer>` and `</answer>`) with a small regex pair.
+3. If the response is a code block, the orchestrator hands it to the sandbox.
+4. The sandbox sends `execute_request` to a per-session Jupyter kernel via `jupyter_client`. It pumps the IOPub message stream until it sees `status: idle` or hits the per-cell deadline.
+5. The orchestrator formats whatever came back — `stdout`, `stderr`, exception traceback, figure-count — into a single observation string and appends it as the next user-turn message.
+6. The LLM responds again, with the next code block or the final answer.
+7. The loop repeats up to `MAX_STEPS = 10`. The agent stops as soon as it emits `<answer>...</answer>`.
+
+That's it. The whole orchestrator is about 150 lines of Python. No framework, no scheduler, no graph. The data dependencies are obvious because they're flat.
+
+### Why no LangChain (or LlamaIndex, or CrewAI)
+
+The first version of this project I sketched did import `langchain`. I deleted it within an afternoon. Not because the frameworks are bad — they're fine for the cases they're designed for — but because they hide exactly the behaviors I needed to debug.
+
+The retry budget is one. The system prompt's exact format is another. The way malformed model output (a code block with no closing tag, an answer tag that's missing the `@name[value]` shape) gets handled is a third. With a 150-line orchestrator, all three are obvious from reading `orchestrator.py` start to finish. With a framework, the same behaviors are spread across config, callbacks, and subclass overrides, and you find out about them when something breaks at midnight.
+
+This is a deliberate signal, not a value judgment of those frameworks. *"I want to understand my tools"* is one of the few things a portfolio project is actually useful for.
+
+### Deliberate choices
+
+A few non-obvious decisions shape what this agent can and can't do.
+
+**A real Jupyter sandbox, not a subprocess.** It's tempting to write `subprocess.run(['python', '-c', code])` and call that a sandbox. It isn't — the subprocess has full host access, no incremental message stream, and no shared state between calls. `agent/sandbox.py` wraps `jupyter_client.KernelManager` instead. State persists across cells (just like a notebook), the IOPub message stream gives me incremental stdout / stderr / display data, and there's a single shared kernel per task that gets cleanly shut down at the end.
+
+**A single deadline per cell, not a per-message timeout.** The cell timeout is 30 seconds by default. That budget is enforced at the loop level (`deadline = time.monotonic() + self._timeout`), not per `get_iopub_msg` call — otherwise a long-running cell that's actively streaming output would never time out, because every message would reset the timer.
+
+**matplotlib figures captured via IOPub PNG.** The Jupyter kernel's default inline backend (`matplotlib_inline.backend_inline`) emits `image/png` data as `display_data` messages on `plt.show()`. The sandbox decodes those into raw PNG bytes and surfaces a figure-count to the model. (The system prompt explicitly tells the agent **not** to call `matplotlib.use('Agg')`, because forcing `Agg` suppresses the inline backend and the figures vanish silently.)
+
+**A provider abstraction behind a one-method `LLMClient`.** Both Groq and Gemini implement the same `chat(messages, **kwargs) -> str` interface. The orchestrator never sees a provider name. Why this matters: when Groq's free-tier TPM ceiling started biting halfway through the first eval, swapping in Gemini was a five-line change in the eval runner, not a rewrite.
+
+**The official InfiAgent scorer, copied verbatim with attribution.** `agent/eval/scorers/infiagent/eval_closed_form.py` is the upstream file with attribution headers at the top. Strict `is_equal` with float tolerance, no homegrown fuzzy matching. The numbers this produces are lower than a naive scorer's, but they're directly comparable to the DABench leaderboard.
+
+### A 2-step trace from a real run
+
+Task 0 in the eval run was *"Calculate the mean fare paid by the passengers"* over the Titanic table (`test_ave.csv`). The format constraint was `@mean_fare[value]`, rounded to 2 decimal places. The official scorer marked it correct; the trace shows 2 steps in 1.76 seconds wall-clock.
+
+Reconstructed from the system prompt and the recorded final answer, the cells looked like this:
+
+**Step 1 — the agent emits:**
+
+```python
+<code>
+import pandas as pd
+df = pd.read_csv(dataset_path)
+print(round(df['Fare'].mean(), 2))
+</code>
+```
+
+The sandbox executes the cell. The observation comes back as:
+
+```text
+[stdout]
+34.65
+```
+
+**Step 2 — the agent emits the answer:**
+
+```text
+<answer>@mean_fare[34.65]</answer>
+```
+
+The orchestrator extracts `@mean_fare[34.65]`, records the final step, and returns. The scorer extracts `("mean_fare", "34.65")` from the answer string, joins against `common_answers = [("mean_fare", "34.65")]`, and calls `is_equal("34.65", "34.65")` — true.
+
+Two model calls. One kernel execution. No tool-call schema. No framework. The model wrote the pandas chain directly because the agent loop got out of its way.
 
 ## Worked examples
 
