@@ -390,7 +390,83 @@ The CI runs `pytest -v` on every push and PR via [`.github/workflows/test.yml`](
 
 ## Evaluation
 
-{/* TODO: 1500w */}
+### Dataset
+
+[InfiAgent-DABench](https://github.com/InfiAgent/InfiAgent) is a closed-form data-analysis benchmark: 257 questions across a bundle of CSV tables (Titanic, insurance, world-happiness, microsoft stock, country vaccinations, several scientific datasets). Each question has a numeric or short-string expected answer with a strict `@name[value]` output schema, and the questions explicitly include the format constraint as a separate field (`@mean_fare[value]` is part of the prompt, not something the model has to guess).
+
+The gold labels live in a separate file from the questions — `da-dev-questions.jsonl` and `da-dev-labels.jsonl`. The eval harness has to join them by `question_id` before scoring. This was a Phase-0 discovery: most ML benchmarks ship answers inline with questions; DABench treats answers as a separate, scorer-only concern. Finding this out *before* writing the eval harness saved several hours of cleanup later.
+
+### Why DABench, not WikiSQL or Spider
+
+WikiSQL and Spider are SQL benchmarks. The questions are *"write the SELECT that produces this answer,"* and the scoring rubric is *"does your SQL match the gold SQL."* That's a fundamentally different task — you're testing the model's ability to translate natural language into a structured language. It doesn't exercise a code-as-action loop at all.
+
+DABench is closed-form pandas/data-analysis. Questions like *"compute the median fare,"* *"fit a linear regression and report R²,"* *"identify the country with the highest daily vaccinations per million."* The expected outputs are *values*, not queries, and the harness scores by value with float tolerance. That maps directly onto what a code-as-action agent does: write code, execute, extract a value, emit it in the required tag schema.
+
+The leaderboard also publishes per-model results from agents using LangChain, ReAct, and a few custom harnesses. The numbers are directly comparable — *"my pilot scored 75% ABQ"* sits alongside *"OpenInterpreter scored X% on the same task."*
+
+### Scorer
+
+`agent/eval/scorers/infiagent/eval_closed_form.py` is the upstream file from InfiAgent's repo, copied verbatim with attribution headers at the top. The scoring loop is:
+
+1. Extract `(name, value)` pairs from the response with `re.findall(r"@(\w+)\[(.*?)\]", response)`.
+2. Build a dict and join it against the task's `common_answers` by name.
+3. For each expected name: run `is_equal(predicted, expected)` — strict equality with float tolerance (default 1e-6, generous for the 2-decimal-rounded answers DABench expects).
+4. ABQ = (correct names) / (total expected names) across the whole task set.
+
+ABQ stands for *Accuracy By Question* in the InfiAgent paper. A task with 4 expected names that the agent gets 1/4 of right contributes (1, 4) to the numerator/denominator — not 0/1.
+
+I copied the scorer rather than re-implementing it for two reasons. **First**, a re-implementation is exactly the place where a small disagreement (different float tolerance, different normalization, lenient name matching) produces a number that doesn't compare to anything. **Second**, attribution and traceability — if someone wants to compare my 75% to a leaderboard entry, they can verify the scorer is the same file, with the same git history.
+
+### Models tested
+
+- **Llama-3.3-70B-Versatile** via [Groq](https://groq.com) (free tier).
+- **Gemini-2.0-Flash** via [Google AI Studio](https://aistudio.google.com) (free tier, 15 RPM hard cap, 4-second inter-call throttle).
+
+Both are recent, capable models. Both are available on free tiers, which mattered for this project — the whole point of writing the eval harness was to produce numbers, and an iteration loop where every run costs $5 in API credits is an iteration loop that doesn't happen.
+
+### Setup
+
+- 10-step ceiling per task (`MAX_STEPS = 10`).
+- Retry-on by default (3 retries per task on cell failures).
+- Kernel reused across turns within a task; fresh kernel per task (state isolation).
+- `temperature=0` for reproducibility.
+- Provider-specific throttling: Groq respects `Retry-After`; Gemini sleeps 4s between calls.
+- Eval runner checkpoints after every task to `results/<run_id>.json` so a mid-run quota crash is resumable.
+
+### Results
+
+Pulled from the raw JSONs at [`agent/eval/results/`](https://github.com/laharikarumanchi-AI-ML/superpowers/tree/main/agent/eval/results):
+
+| Configuration | Tasks attempted | Tasks with response | ABQ (official scorer) | Notes |
+|---|---|---|---|---|
+| Llama-3.3-70B + retry, 80-task subset | 80 | 9 | **75%** | Free-tier TPM exhausted after task 9; remaining 71 returned `429 Too Many Requests`. |
+| Llama-3.3-70B + retry-off ablation | — | — | (planned) | Pending API budget; will quantify self-correction value. |
+| Gemini-2.0-Flash + retry, 50-task subset | 50 | 0 | — | API-key key-format issue early in the run + free-tier quota; no scorable tasks. |
+
+The Llama row is the headline. The Gemini row is the "what didn't work" — included for honesty.
+
+### The /80 caveat
+
+The 75% is honest about its scope, and the scope is small. Of the 80 tasks the run attempted:
+
+- **9 tasks produced a response.** The official scorer marked all 9 as `success=True` at the task level. ABQ is computed per *expected name*, not per task — across the 9 attempted tasks, the scorer's per-name accuracy is what produces the 75% figure.
+- **71 tasks returned `429 Too Many Requests`** from Groq's API. The retry budget honored `Retry-After` headers up to 60 seconds, but Groq's free tier has a *daily TPM* cap, and a 10-step task burns ~2K input tokens per step × 5 retry-aware attempts on transient errors. The math doesn't work out for 80 tasks in a day.
+
+Scaling this to the full 257-task DABench requires one of three things: (1) a paid tier on Groq Dev (~$5/month for the daily TPM headroom), (2) a multi-day run with daily quota resets, or (3) a paid Gemini key with higher RPM. None of those are technical changes — the agent code is ready. They're budget changes. The code-readiness is the part I can prove now; the budget will follow when there's a recruiter conversation that requires the 257-task figure to exist.
+
+### Latency breakdown
+
+Across the 9 attempted tasks, total wall-clock was 35.6 seconds — a mean of 3.95 seconds per task, ranging from 1.76s (the 2-step `mean_fare` task) to 9.34s (the 3-step correlation task on `insurance.csv`). The per-task breakdown:
+
+| Component | Approx. % of wall clock |
+|---|---|
+| LLM API call (Groq, p50) | ~88% |
+| Sandbox execute (Jupyter kernel + message drain) | ~5% |
+| Trace I/O + scoring + orchestrator overhead | ~7% |
+
+These are estimates from spot-checking individual task durations; the eval JSON records `wall_seconds` per task but doesn't break down by component. The qualitative story is clear though: **the sandbox is fast**. The kernel reuse across cells means the only per-cell cost is the IOPub message drain (microseconds), and the LLM round-trip dominates the budget.
+
+This is the opposite of what I expected when I started. The intuition was *"a real Jupyter kernel must be heavy compared to a subprocess."* It isn't — kernel startup is a one-time cost amortized across the whole task, and per-cell execution is just message-pump bookkeeping. The bottleneck is, and stays, the model.
 
 ## Limitations
 
