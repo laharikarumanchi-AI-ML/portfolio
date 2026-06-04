@@ -504,4 +504,26 @@ The hardening path is well-understood: spawn a per-session Docker child containe
 
 ## What I'd do differently
 
-{/* TODO: 500w */}
+### Treat free-tier rate limits as a first-class design constraint
+
+I scoped this project as *"run an 80-task subset of DABench."* Within a few hours of the first real eval run, it was clear the real scope was *"run as many tasks as a daily free-tier TPM cap allows, then stop."* I'd have scoped to a 20-task subset with proper throttling on day one, instead of building the retry budget as a reaction to hitting limits.
+
+The retry budget I shipped is the right code — `Retry-After`-aware backoff, 5 attempts, exponential fallback, per-client throttle. But it exists because I hit the limits *first* and built around them *second*. If I'd planned for the cap up front, the eval harness would have a smaller default subset, a polite-by-default throttle, and a clear *"this is bounded by quota, not by code"* note in the results — not a retroactive footnote.
+
+### Smoke-test against the real API before the eval harness
+
+The eval harness is ~200 lines: dataset loader, scorer wrapper, results writer, checkpoint logic. I wrote it cleanly the first time. Then the first real run surfaced three bugs that had nothing to do with the harness — a matplotlib backend issue (the kernel emits PNG via the inline backend, and one early system-prompt iteration was telling the model to call `matplotlib.use('Agg')`, which suppressed it), a retry budget off-by-one (the original `if retries_used > MAX_RETRIES`, not `>=`, gave the agent a 4th retry under load), and a prompt-format mismatch (the format constraint string had different whitespace conventions than the scorer expected).
+
+All three are bugs I'd have caught in a 5-minute smoke test against one real DABench task. I didn't run that smoke test because the test suite was green and end-to-end against a mock LLM worked, and I trusted those signals more than I should have. The mock LLM doesn't have a tokenizer that interprets prompt whitespace; it just plays back canned responses. *Real-tokenizer surprises are real.*
+
+### Phase-0 discovery saved hours later
+
+The Phase-0 work — read DABench's repo, find the labels file is separate from questions, find the scorer is a separate `eval_closed_form.py`, copy it with attribution, understand the `@name[value]` regex — felt like overhead at the time. It took most of an afternoon. In retrospect, every one of those discoveries would have cost me 2-3× more time to find out the painful way (write a homegrown loader, run the agent, get a scorer mismatch, debug).
+
+I'd do this discovery for any benchmark integration going forward. The pattern generalizes: before writing any eval code, find the scorer, find the labels file, find the output schema, find one example task. Treat *"how does this benchmark actually grade me"* as a Phase-0 deliverable, not a Phase-3 surprise.
+
+### The Gemini API leaks keys via URL params — log raw URLs at your own risk
+
+This one is a real-world security lesson, not a design reflection. Gemini's REST API takes the API key as a URL query parameter (`?key=AIzaSy…`). The Python `requests` library's `Response.url` attribute exposes the full URL after redirect resolution, and `requests.HTTPError.__str__()` builds its message from `resp.url` — which means an unsanitized error message contains the live key.
+
+I caught it during a code review of the Gemini client. The scrub is one line — `resp.url = resp.url.split("?")[0] + "?key=[REDACTED]"` before `raise_for_status()`. Without it, every quota error written to `results/<run_id>.json` would have contained the real key. I checked the existing Groq client (which uses a header for auth, no URL key) and the Streamlit demo's logging path (no raw `resp.url` exposure). But the takeaway is durable: assume any field the SDK touches is a logging surface, and assume any URL with `?key=` in it will end up somewhere it shouldn't.
