@@ -17,7 +17,11 @@ v2: true
 
 ## TL;DR
 
-{/* TODO: 200w */}
+Data analysis questions — *"what's the median order value by city," "is there a relationship between tenure and churn"* — are everywhere in real work, and a poor fit for chat-only LLMs. This is a **code-as-action agent**: it answers questions about CSV data by writing and executing Python in a sandboxed Jupyter kernel, the same way an analyst would in a notebook. On a 9-task pilot of [InfiAgent-DABench](https://github.com/InfiAgent/InfiAgent) using Llama-3.3-70B via Groq, it scored **75% ABQ** under the official scorer. The pilot is honest about its scope — see [Evaluation](#evaluation).
+
+> **75% ABQ on a 9-task pilot of InfiAgent-DABench (Llama-3.3-70B via Groq).** 9 of 80 attempted tasks completed before free-tier quota ran out; the remaining 71 hit `429 Too Many Requests`. The agent loop itself works (33 tests passing) — the bottleneck is API quota, not correctness.
+
+[→ Code on GitHub](https://github.com/laharikarumanchi-AI-ML/superpowers) · [→ Try the live demo](https://huggingface.co/spaces/laharikarumanchi/data-analysis-agent)
 
 ## Problem
 
