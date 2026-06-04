@@ -81,7 +81,7 @@ This is a deliberate signal, not a value judgment of those frameworks. *"I want 
 
 **A single deadline per cell, not a per-message timeout.** The cell timeout is 30 seconds by default. That budget is enforced at the loop level (`deadline = time.monotonic() + self._timeout`), not per `get_iopub_msg` call — otherwise a long-running cell that's actively streaming output would never time out, because every message would reset the timer.
 
-**matplotlib figures captured via IOPub PNG.** The Jupyter kernel's default inline backend (`matplotlib_inline.backend_inline`) emits `image/png` data as `display_data` messages on `plt.show()`. The sandbox decodes those into raw PNG bytes and surfaces a figure-count to the model. (The system prompt explicitly tells the agent **not** to call `matplotlib.use('Agg')`, because forcing `Agg` suppresses the inline backend and the figures vanish silently.)
+**matplotlib figures captured via IOPub PNG.** The Jupyter kernel's default inline backend (`matplotlib_inline.backend_inline`) emits `image/png` data as `display_data` messages on `plt.show()`. The sandbox decodes those into raw PNG bytes and surfaces a figure-count to the model. (The system prompt explicitly tells the agent **not** to call `matplotlib.use(...)`, because forcing the wrong backend suppresses the inline emit and the figures vanish silently.)
 
 **A provider abstraction behind a one-method `LLMClient`.** Both Groq and Gemini implement the same `chat(messages, **kwargs) -> str` interface. The orchestrator never sees a provider name. Why this matters: when Groq's free-tier TPM ceiling started biting halfway through the first eval, swapping in Gemini was a five-line change in the eval runner, not a rewrite.
 
@@ -312,7 +312,7 @@ for step in range(MAX_STEPS):
 return AgentResult(False, None, trace, MAX_STEPS, failure_reason="max steps reached")
 ```
 
-Five exits: answered, no-answer-cell-malformed (continue), cell-failed-retry-disabled, retry-budget-exceeded, max-steps-reached. The single `for/else` shape is intentional — it's easier to read than a `while` with a flag.
+Five exits: answered, no-answer-cell-malformed (continue), cell-failed-retry-disabled, retry-budget-exceeded, max-steps-reached. The flat `for` loop with a fallthrough return is intentional — it's easier to read than a `while` with a flag.
 
 The `retry_on_failure=False` branch is the ablation knob the README mentions. The plan is to run the same 80-task subset with retries off, to quantify how much of the 75% ABQ comes from the model's self-correction versus first-shot accuracy. That run is on the roadmap; the API budget isn't there yet.
 
