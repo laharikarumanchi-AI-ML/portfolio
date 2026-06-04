@@ -11,7 +11,7 @@ order: 1
 category: Agents
 status: shipped
 lastUpdated: 2026-06-03
-readTimeMinutes: 24
+readTimeMinutes: 25
 v2: true
 ---
 
@@ -428,6 +428,8 @@ This is the opposite of what I expected when I started. The intuition was *"a re
 
 The fix isn't technical. The agent code runs the full benchmark cleanly — the eval harness checkpoints after every task, the retry budget is honest about `Retry-After`, the kernel restart per task isolates state. What it needs is API budget headroom: roughly $5/month on Groq Dev for the higher daily TPM tier, or a paid Gemini key with a more forgiving RPM cap, or a multi-day run that resets daily quotas between sittings. Until one of those is in place, the headline number stays as-is: 75% on a small honest sample, with the bottleneck called out by name.
 
+**Wide confidence intervals on a 9-task sample.** A 75% point estimate on n=9 has a 95% confidence interval of roughly ±25 points using a Wilson score interval — so the honest reading of this number is somewhere between "mid-fifties" and "borderline ninety." Scaling the eval is the only way to tighten this; the agent's correctness story doesn't change with more tasks, but the headline number's uncertainty does. The Llama row in the [results table](#evaluation) is *consistent with* 75% ABQ, not a confident measurement of it.
+
 **Local-only public demo, deployed-demo restricted to vetted datasets.** The Streamlit app supports two modes: the deployed Hugging Face Spaces version runs against vetted CSVs (iris, tips, titanic) only; the local `streamlit run demo/app.py` exposes `st.file_uploader` for ad-hoc CSV upload.
 
 The reason the deployed version locks the dataset list is that *"upload a CSV + ask any question"* with a sandbox that runs LLM-emitted Python is RCE-on-a-platter without container isolation. A malicious user could ask the agent to *"read /etc/passwd and print its contents,"* and a code-as-action agent will helpfully comply. The vetted-datasets mode sidesteps this by hardcoding the three CSV paths and refusing to accept user-supplied filenames.
@@ -463,3 +465,5 @@ I'd do this discovery for any benchmark integration going forward. The pattern g
 **The Gemini API leaks keys via URL params — log raw URLs at your own risk.** This one is a real-world security lesson, not a design reflection. Gemini's REST API takes the API key as a URL query parameter (`?key=AIzaSy…`). The Python `requests` library's `Response.url` attribute exposes the full URL after redirect resolution, and `requests.HTTPError.__str__()` builds its message from `resp.url` — which means an unsanitized error message contains the live key.
 
 I caught it during a code review of the Gemini client. The scrub is one line — `resp.url = resp.url.split("?")[0] + "?key=[REDACTED]"` before `raise_for_status()`. Without it, every quota error written to `results/<run_id>.json` would have contained the real key. I checked the existing Groq client (which uses a header for auth, no URL key) and the Streamlit demo's logging path (no raw `resp.url` exposure). But the takeaway is durable: assume any field the SDK touches is a logging surface, and assume any URL with `?key=` in it will end up somewhere it shouldn't.
+
+**Capture per-step trace JSON during eval, not just final answers.** The eval runner records `predicted_response` and `passed` per task, but not the intermediate cells. That's why the [worked-examples section](#worked-examples) above leans on the runner's final-answer JSON plus the test suite for the self-correction story, rather than a vivid per-cell recovery trace from a real DABench run. The structural gap is mine — I made it cheap to store the headline number and expensive to reconstruct *why* a task passed or failed. On the next harness, the trace gets a checkpoint per cell, and the [worked examples](#worked-examples) for the *next* writeup are vivid by default.
