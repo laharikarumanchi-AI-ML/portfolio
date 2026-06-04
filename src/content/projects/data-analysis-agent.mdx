@@ -358,7 +358,35 @@ After an interrupt fires (because a cell hit the per-cell deadline), there are u
 
 ### Test suite
 
-{/* TODO: 400w */}
+33 tests across 6 files, all green in CI on every push and PR. The split:
+
+| File | Tests | What it covers |
+|---|---|---|
+| `test_sandbox.py` | 5 | Kernel lifecycle, exception traceback capture, per-cell deadline, matplotlib figure capture, state persistence across cells. |
+| `test_llm_client.py` | 12 | Retry budget, `Retry-After` parsing, exponential backoff, URL key-scrub, per-call throttle, message-format translation for Gemini. |
+| `test_orchestrator.py` | 9 | `<code>` / `<answer>` regex parsing, observation formatting (stdout / stderr / exception / figure-count), dataset preview safety, malformed-output handling. |
+| `test_trace.py` | 1 | JSON serialization round-trip of a `StepRecord`. |
+| `test_end_to_end.py` | 2 | Full agent loop against a scripted mock LLM — verifies the integration without burning a real API call. |
+| `test_eval.py` | 4 | DABench loader (questions × labels join), official scorer integration, edge cases. |
+
+The most non-obvious test, and the one that took the longest to get right, is the cell timeout:
+
+```python
+def test_long_running_code_times_out():
+    sb = Sandbox(timeout_seconds=2)
+    try:
+        result = sb.execute("import time; time.sleep(10); print('done')")
+    finally:
+        sb.close()
+    assert result.timed_out is True
+    assert "done" not in result.stdout
+```
+
+Two seconds budget, ten seconds of work. The assertion `"done" not in result.stdout` is the one that matters: it proves the kernel was actually *interrupted* mid-sleep and the `print('done')` never ran. Earlier versions of the sandbox passed `result.timed_out is True` but failed the stdout check — the deadline was tripping, but the IOPub drain wasn't catching the trailing `print`, so the next cell would see ghost output. The fix is in `_drain_until_idle()`.
+
+The CI runs `pytest -v` on every push and PR via [`.github/workflows/test.yml`](https://github.com/laharikarumanchi-AI-ML/superpowers/blob/main/.github/workflows/test.yml). The badge below reflects the live status of `main`:
+
+[![tests](https://github.com/laharikarumanchi-AI-ML/superpowers/actions/workflows/test.yml/badge.svg)](https://github.com/laharikarumanchi-AI-ML/superpowers/actions/workflows/test.yml)
 
 ## Evaluation
 
