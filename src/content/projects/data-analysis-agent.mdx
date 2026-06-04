@@ -25,7 +25,41 @@ Data analysis questions — *"what's the median order value by city," "is there 
 
 ## Problem
 
-{/* TODO: 1000w */}
+Tabular data questions are everywhere in real work. *"What's the median fare by region. Is there a relationship between tenure and churn. Show me the top five products by margin."* These are the questions a junior analyst gets asked in their first week on the job — and they're a surprisingly poor fit for chat-only LLMs.
+
+The mismatch is structural. The model can't *see* the spreadsheet. You can paste a CSV header and a few sample rows into the chat, but that's a five-line teaser of a 50,000-row file. The model has to guess what's in the rest. It guesses how the categorical columns are spelled (is it `"Female"` or `"female"` or `"F"`?). It guesses whether there are nulls. It guesses what the column distribution looks like. Most of the time those guesses are reasonable — and that "most of the time" is exactly the problem. The wrong guess produces a confidently-presented wrong answer, and there's no way for the model to find out it was wrong, because it never actually touched the data.
+
+The honest fix is to let the model touch the data. That means writing and executing code.
+
+### Why ReAct tool-call agents struggle here
+
+The standard playbook for "LLM that does things" is a ReAct loop with a predefined toolbox. LangChain, LlamaIndex, CrewAI, and most LangGraph examples wire it up the same way: the agent picks a tool (`pandas_read_csv`, `df_groupby`, `compute_mean`), the tool runs, the result comes back as an observation, and the agent picks the next tool. It's the right shape for *"book a flight or check the weather"* — a small, discrete action space.
+
+It falls apart on multi-step pandas. A real analysis question — *"average tip percent by day-of-week"* — is read, derive a new column, groupby, format. Four pandas operations. In a tool-call agent, that's four full round-trips to the LLM, each with the previous observation re-fed as context, and each generating an entire tool-call schema response. Latency stacks. Token cost stacks. And the agent is reasoning at the wrong altitude — picking from a menu of `df_apply_function` shapes instead of writing the pandas chain the way an analyst would.
+
+The deeper limitation is expressiveness. A tool-call menu can only let the agent do what the toolbox author thought to expose. Real pandas work is full of small, project-specific transformations (`df['tip_pct'] = df.tip / df.total_bill * 100`) that you'd never add as a permanent tool. A code-as-action agent doesn't have that ceiling — it writes the line directly.
+
+### What I actually wanted
+
+The model I had in my head was a junior analyst opening a notebook. They write a cell, look at the output, write the next cell. If the column is named `Fare` and they typed `fare`, they see the `AttributeError`, fix it, and move on. They don't ask permission first. They don't pick from a menu. They *think in code*.
+
+That's a code-as-action loop: the model emits Python, the Python runs inside a live Jupyter kernel, the resulting stdout / stderr / display data / images get fed back as the next observation, and the loop repeats until the model emits a final answer. One model call per step, not one per pandas operation. The agent gets to use the full expressiveness of pandas — including ad-hoc lambdas, list comprehensions, and one-off helper functions — without having to ask anyone for permission first.
+
+### Why InfiAgent-DABench specifically
+
+I needed a benchmark that wouldn't let me lie to myself about how well the agent worked.
+
+[InfiAgent-DABench](https://github.com/InfiAgent/InfiAgent) is a closed-form benchmark of 257 real data-analysis questions across a bundle of CSV tables. The questions look exactly like the kind of thing an analyst would actually be asked: *median fare on the Titanic dataset, correlation coefficient between two columns, top-N country by some aggregate metric.* Not "explain pandas in plain English." Real questions with real numerical answers.
+
+Three properties made it the right fit. **First, the gold labels live in a separate file from the questions** — `da-dev-questions.jsonl` references tasks by ID; `da-dev-labels.jsonl` holds the answer schema. That's a small detail that turns out to matter: it forces the eval harness to do an explicit join, which makes it harder to accidentally peek at answers during agent execution. **Second, the official scorer extracts answers from a strict `@name[value]` tag schema** — `<answer>@mean_fare[34.65]</answer>` — using `re.findall(r"@(\w+)\[(.*?)\]", response)`, then matches the names against `common_answers` and runs a strict `is_equal` with float tolerance. **Third, the benchmark publishes a leaderboard** — so the numbers I report are directly comparable to other agents' numbers, instead of being a homegrown metric that nobody can sanity-check.
+
+### What "honest evaluation" means here
+
+The first temptation when evaluating any LLM was to write `predicted.lower() in expected.lower()` and call it 75% accuracy. That number is meaningless. The predicted string `"The mean is 34.65"` and the expected string `"34.65"` both pass; so does `"The mean is roughly 35"`, which is wrong. A substring check inflates scores by exactly the amount you don't want it to.
+
+Instead, I copied InfiAgent's `eval_closed_form.py` into `agent/eval/scorers/infiagent/` verbatim, with attribution headers at the top of the file. The scorer extracts the `@name[value]` tags from the response, joins them against the gold `common_answers` by name, and runs strict equality with a small float tolerance. The trade-off is that the scorer is *stricter* than a naive matcher, so the numbers are lower than they would be otherwise — but they're honest, and they're leaderboard-comparable.
+
+That's the whole reason this benchmark exists: to produce numbers that survive contact with someone else's evaluation infrastructure.
 
 ## Approach
 
