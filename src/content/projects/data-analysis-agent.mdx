@@ -470,7 +470,37 @@ This is the opposite of what I expected when I started. The intuition was *"a re
 
 ## Limitations
 
-{/* TODO: 800w */}
+### Quota-bounded headline
+
+The 75% ABQ figure sits on 9 of 80 attempted tasks. Out of the full 257-task DABench, that's a 3.5% sample. The rest of the 80-task subset returned `429 Too Many Requests` from Groq's API after the daily TPM budget ran out, and the same daily cap blocked re-running the rest the next day inside a single sitting.
+
+The fix isn't technical. The agent code runs the full benchmark cleanly — the eval harness checkpoints after every task, the retry budget is honest about `Retry-After`, the kernel restart per task isolates state. What it needs is API budget headroom: roughly $5/month on Groq Dev for the higher daily TPM tier, or a paid Gemini key with a more forgiving RPM cap, or a multi-day run that resets daily quotas between sittings. Until one of those is in place, the headline number stays as-is: 75% on a small honest sample, with the bottleneck called out by name.
+
+### Local-only public demo, deployed-demo restricted to vetted datasets
+
+The Streamlit app supports two modes: the deployed Hugging Face Spaces version runs against vetted CSVs (iris, tips, titanic) only; the local `streamlit run demo/app.py` exposes `st.file_uploader` for ad-hoc CSV upload.
+
+The reason the deployed version locks the dataset list is that *"upload a CSV + ask any question"* with a sandbox that runs LLM-emitted Python is RCE-on-a-platter without container isolation. A malicious user could ask the agent to *"read /etc/passwd and print its contents,"* and a code-as-action agent will helpfully comply. The vetted-datasets mode sidesteps this by hardcoding the three CSV paths and refusing to accept user-supplied filenames.
+
+The production-grade *"upload your own"* path requires Docker isolation per [spec §4a](https://github.com/laharikarumanchi-AI-ML/superpowers/blob/main/docs/superpowers/specs/2026-05-26-data-analysis-agent-design.md). The Docker image, network restrictions, and namespace isolation are designed; they're not wired up to HF Spaces yet. That's the gap between *"the demo works"* and *"the demo is safe for an unknown internet user to point at their own data."*
+
+### No fine-tuning
+
+This is deliberately out of scope. The project is about agent design and honest evaluation, not training. A small LoRA adapter on DABench-format-constrained tasks (1–2 epochs on the held-out training split, no parameter-efficient bells and whistles) would almost certainly add several points to ABQ — the model would learn to emit the `@name[value]` tag schema more reliably and would internalize the rounding-to-2-decimal-places convention.
+
+I'd rather ship a clean evaluation of an off-the-shelf model than a fine-tuned number that's hard to reproduce. If the recruiter conversation requires the fine-tuned variant, it's a weekend's work to add — but it's a different project, and conflating it with this one would muddy the *"what does the off-the-shelf agent loop buy you"* answer.
+
+### Single-model per run; no mid-run provider fallback
+
+The eval runner picks one provider at startup and stays with it for the whole run. When Groq's TPM cap hit mid-run, the harness couldn't transparently fail over to Gemini for the rest of the tasks — it just recorded 71 consecutive `429` errors in the results JSON and finished.
+
+A multi-provider fallback would be useful, especially for the *"is the agent code actually working"* test at higher task counts. It's a deferred improvement, not a hard one: each call site would need a fallback list `[GroqClient, GeminiClient]` and a try/except that falls through on `quota_exhausted` errors. The design knot is what to record in the results JSON when the provider changes mid-run — *"task 14 was on Groq, task 15 was on Gemini"* is a real footnote that has to surface in the headline, not get buried.
+
+### Threat model for the deployed demo
+
+Even in vetted-datasets mode, the deployed Streamlit demo runs the LLM-emitted Python as the host user with no namespace isolation. The HF Spaces sandbox is a Docker container that runs the whole Streamlit app, including the agent kernel — so the *outer* container provides isolation from other tenants on the platform, but *within* the container, the agent's kernel can read every file the Streamlit process can read. For a demo that ships three CSVs and nothing sensitive, that's an acceptable threat model. For anything else, it isn't.
+
+The hardening path is well-understood: spawn a per-session Docker child container for the kernel, mount the dataset read-only, drop network egress, set CPU/memory limits, and have the agent communicate with the kernel over a unix socket bound into the child. Each of those steps is incremental and well-documented in the Jupyter project's own deployment guides. None of them have shipped here yet, because the deployed demo only handles vetted CSVs and the bar is set deliberately low.
 
 ## What I'd do differently
 
