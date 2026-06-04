@@ -1,0 +1,186 @@
+---
+import type { MarkdownHeading } from 'astro';
+
+interface Props {
+  headings: MarkdownHeading[];
+}
+const { headings } = Astro.props;
+
+// Show H2 + H3 only. H3s appear indented under their parent H2.
+const tocHeadings = headings.filter(h => h.depth === 2 || h.depth === 3);
+---
+<aside class="toc-sidebar" aria-label="Table of contents">
+  {/*
+    `open` attribute is set unconditionally — the inline script below
+    syncs it with viewport size so desktop always shows the contents.
+    Without `open`, the browser's UA stylesheet hides every child except
+    `<summary>`, and the desktop CSS hides `<summary>` too, resulting in
+    an empty sidebar. The `open` attribute is the fix.
+  */}
+  <details class="toc-mobile-disclosure" open>
+    <summary>Jump to section</summary>
+    <p class="toc-title">On this page</p>
+    <ol>
+      {tocHeadings.map(h => (
+        <li class:list={[`toc-depth-${h.depth}`]}>
+          <a href={`#${h.slug}`} data-toc-slug={h.slug}>{h.text}</a>
+        </li>
+      ))}
+    </ol>
+    <hr/>
+    <slot name="actions" />
+  </details>
+</aside>
+
+<script>
+  // 1. Sync the <details> open state with viewport size.
+  //    Per spec §3.6, mobile starts collapsed; desktop is always open.
+  //    The markup uses `<details open>` so desktop renders correctly
+  //    even before this script runs (no FOUC of an empty sidebar).
+  //    Then on script init we close it on mobile, and re-open it
+  //    whenever the viewport crosses back to desktop.
+  //    Known minor wart: a mobile→desktop→mobile round-trip re-opens
+  //    the disclosure even if the user had closed it. Acceptable given
+  //    the rarity of viewport round-trips on real reads.
+  const tocDetails = document.querySelector<HTMLDetailsElement>('aside.toc-sidebar details.toc-mobile-disclosure');
+  if (tocDetails) {
+    const desktopMQ = window.matchMedia('(min-width: 901px)');
+    const syncOpen = () => {
+      if (desktopMQ.matches) tocDetails.open = true;
+    };
+    // Start collapsed on mobile to match spec §3.6 intent.
+    if (!desktopMQ.matches) tocDetails.open = false;
+    desktopMQ.addEventListener('change', syncOpen);
+  }
+
+  // 2. Active-section highlight via IntersectionObserver.
+  //    Observes every H2/H3 with an id in the main column and toggles
+  //    aria-current="location" on the matching TOC <a>.
+  const links = document.querySelectorAll<HTMLAnchorElement>('aside.toc-sidebar a[data-toc-slug]');
+  if (links.length > 0) {
+    const linkBySlug = new Map<string, HTMLAnchorElement>();
+    links.forEach(a => linkBySlug.set(a.dataset.tocSlug!, a));
+
+    const headingEls = document.querySelectorAll<HTMLElement>('main h2[id], main h3[id]');
+
+    let activeSlug: string | null = null;
+    const setActive = (slug: string | null) => {
+      if (slug === activeSlug) return;
+      if (activeSlug) linkBySlug.get(activeSlug)?.removeAttribute('aria-current');
+      if (slug)       linkBySlug.get(slug)?.setAttribute('aria-current', 'location');
+      activeSlug = slug;
+    };
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        // Pick the topmost heading that's currently in view.
+        const visible = entries
+          .filter(e => e.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+        if (visible[0]) {
+          setActive((visible[0].target as HTMLElement).id);
+        }
+      },
+      { rootMargin: '-80px 0px -60% 0px' } // top offset = sticky nav height
+    );
+
+    headingEls.forEach(h => observer.observe(h));
+
+    // 3. Smooth-scroll on TOC link click + history.pushState for back-button
+    //    support + post-jump focus move (so keyboard users continue from the
+    //    target heading, not the TOC link they just left).
+    //
+    //    Smooth-scroll degrades to 'auto' under prefers-reduced-motion per
+    //    WCAG 2.3.3 — vestibular/migraine-sensitive users see an instant jump.
+    const reducedMotionMQ = window.matchMedia('(prefers-reduced-motion: reduce)');
+    links.forEach(a => {
+      a.addEventListener('click', (e) => {
+        const slug = a.dataset.tocSlug!;
+        const target = document.getElementById(slug);
+        if (target) {
+          e.preventDefault();
+          target.scrollIntoView({
+            behavior: reducedMotionMQ.matches ? 'auto' : 'smooth',
+            block: 'start',
+          });
+          history.pushState(null, '', `#${slug}`);
+          // Make the heading focusable in-place, then move focus there
+          // without scrolling again. preventScroll: true honors the smooth
+          // scroll we just kicked off.
+          target.setAttribute('tabindex', '-1');
+          target.focus({ preventScroll: true });
+        }
+      });
+    });
+  }
+</script>
+
+<style>
+  .toc-sidebar {
+    font-family: var(--font-sans);
+  }
+  .toc-mobile-disclosure {
+    /* On desktop, treat as always-open with sticky positioning */
+  }
+  .toc-mobile-disclosure summary {
+    display: none;
+    cursor: pointer;
+    padding: 0.6rem 0;
+    font-weight: 600;
+    border-bottom: 1px solid var(--rule);
+  }
+  .toc-title {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 var(--space-2);
+  }
+  .toc-sidebar ol {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .toc-sidebar li {
+    margin: 0;
+  }
+  .toc-sidebar a {
+    display: block;
+    padding: 0.35rem 0.5rem;
+    border-radius: 4px;
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 0.88rem;
+    line-height: 1.4;
+    transition: color var(--t-fast), background-color var(--t-fast);
+  }
+  .toc-sidebar a:hover {
+    color: var(--ink);
+    background: var(--hover);
+  }
+  .toc-sidebar a[aria-current="location"] {
+    color: var(--accent-violet-deep);
+    background: rgba(167, 139, 250, 0.12);
+    font-weight: 600;
+  }
+  .toc-depth-3 a {
+    padding-left: 1.5rem;
+    font-size: 0.82rem;
+  }
+  .toc-sidebar hr {
+    margin: var(--space-2) 0;
+    border: none;
+    border-top: 1px solid var(--rule);
+  }
+
+  /* Mobile: collapse to disclosure */
+  @media (max-width: 900px) {
+    .toc-mobile-disclosure summary { display: block; }
+    .toc-mobile-disclosure > *:not(summary) {
+      display: none;
+    }
+    .toc-mobile-disclosure[open] > * { display: block; }
+    .toc-mobile-disclosure[open] summary { display: block; }
+  }
+</style>
