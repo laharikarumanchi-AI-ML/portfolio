@@ -1,35 +1,78 @@
 ---
 title: "Multi-Tool AI Agent"
-oneLiner: "A ReAct-style autonomous agent that decomposes user queries into steps and selects the right tool (web search, calculator, custom functions) for each."
-headlineNumber: "Multi-step tool reasoning with retry/error handling"
-techStack: ["Python", "LangChain"]
-year: 2025
-featured: false
-order: 3
+oneLiner: "A function-calling-native agent that picks between web search, calculator, datetime, unit conversion, and Wikipedia tools — no LangChain, no ReAct prose parsing."
+headlineNumber: "Function-calling-native agent over 5 tools (Tavily / calc / datetime / pint / wiki) — 25-query benchmark in progress"
+techStack: ["Python", "Groq / Llama-3.3", "Tavily", "pint", "numexpr", "Streamlit"]
+year: 2026
+githubUrl: "https://github.com/laharikarumanchi-AI-ML/multi-tool-agent"
+featured: true
+order: 2
 category: Agents
+status: in-progress
+lastUpdated: 2026-06-08
+readTimeMinutes: 4
+v2: true
 ---
+
+## TL;DR
+
+The previous version of this page promised a comparison: *"I'd compare against a function-calling-native loop — the same agent semantics but driven by structured tool calls instead of free-form reasoning text — to see how much of the framework I actually need."* This project executes that comparison as a built artifact. The orchestrator is ~135 lines of Python, no LangChain, no `Thought:`/`Action:` scaffolding. It calls Groq's `tools=` API directly, dispatches whatever `tool_calls` the model returns, and loops. Five tools are wired up: Tavily web search, a numexpr-backed calculator, a datetime helper, pint-based unit conversion, and a Wikipedia summary fetch. A 25-query hand-curated benchmark is in flight; the headline number lands after a Groq TPD reset and an eval re-run.
+
+> **Function-calling-native, 5 tools, 25-query benchmark in progress.** 109 tests passing across orchestrator, tools, LLM client, eval scorer, CLI, and Streamlit smoke. Initial eval surfaced a `tool_use_failed` retry bug — fix landed; corrected headline pending Groq quota reset.
+
+[→ Code on GitHub](https://github.com/laharikarumanchi-AI-ML/multi-tool-agent)
 
 ## Problem
 
-A lot of useful questions don't fit in a single tool call. "What's the population of the city the latest Nobel literature winner was born in, divided by the GDP per capita of that country?" needs a search, then another search, then a calculator. I wanted to see what it took to make an agent that could chain those steps reliably, including when one of the tools fails or returns nonsense.
+A lot of useful questions don't fit in a single tool call. *"What's the population of Chicago divided by the US GDP per capita in 2023? How many years between Apple's founding and the iPhone launch? Is the speed of sound at sea level higher than a Boeing 747's top speed in m/s?"* Each of those is two-or-three tools chained together — search to find a fact, sometimes another search, then a calculator or a unit conversion. A chat-only LLM gets the easy ones right by guessing from training data and gets the recent ones confidently wrong.
+
+The standard playbook for *"LLM that does things"* is a ReAct loop with a fixed toolbox. LangChain, LlamaIndex, CrewAI all wire it up the same way: the model emits `Thought: ... Action: search ... Action Input: ...`, a regex parser pulls out the call, the tool runs, the observation goes back as `Observation: ...`, and the loop repeats. The shape works. The cost is that the prose scaffolding eats tokens fast on long chains, and a malformed `Action:` line crashes the run in a way that's invisible inside the framework's internals.
+
+The Data Analysis Agent writeup ended on a deliberate question: *"I'd compare against a function-calling-native loop — the same agent semantics but driven by structured tool calls instead of free-form reasoning text."* This project is that comparison.
 
 ## Approach
 
-Project at a glance:
+The dispatch path is the whole story. Instead of asking the model to write `Action: tavily_search` in prose and parsing it back out with a regex, the orchestrator passes a `tools=[...]` parameter to Groq's chat API on every turn. Groq returns either a `content` string (the final answer) or a structured `tool_calls` array with `(id, name, arguments)`. The orchestrator dispatches each call, appends the result as a `{"role": "tool", ...}` message, and loops. No prose scaffolding to parse, no regex to break.
 
-- LangChain's ReAct agent scaffold with a custom toolbox (web search, calculator, a few domain-specific functions).
-- Explicit prompt scaffolding for the thought / action / observation cycle so the trace is auditable.
-- Retry-with-reflection wrapper around tool calls: if a tool errors or returns an empty result, the agent gets the error back as an observation and decides whether to retry, switch tools, or give up.
-- Step cap to prevent runaway loops on impossible questions.
+**The `@tool` decorator.** Adding a new tool is one function with a docstring:
+
+```python
+@tool
+def tavily_search(query: str) -> str:
+    """Search the web for current information.
+    Returns Tavily's pre-summarized answer plus up to 5 result URLs and snippets."""
+    ...
+```
+
+The decorator reads the function's type hints and docstring, builds an OpenAI-compatible JSON Schema, and registers it in a module-level `TOOL_REGISTRY`. The docstring is load-bearing — it becomes the tool description the model sees, so the decorator raises `ValueError` at import time if it's missing. The supported parameter types are a deliberately closed set (`str`, `int`, `float`, `bool`, and `Optional[X]` of those); anything else raises `UnsupportedToolTypeError`. The closed set keeps the schema generation honest — there's no quiet fallthrough to `"string"` for a type the loop can't actually handle.
+
+**The 5 tools, and why they split into two error-handling classes.** This was the design decision worth calling out. The tools split cleanly by failure mode: `tavily_search` and `wikipedia` wrap network clients, so they *raise* on errors (a 5xx might succeed on retry — retrying makes sense). The calculator (numexpr), datetime helper, and unit converter (pint) are deterministic, so they *return error strings* — a `pint.UndefinedUnitError` doesn't fix itself with the same input, so retrying is wasted Groq tokens. The orchestrator's `_dispatch_with_retry` respects this convention: it catches exceptions and retries up to 2× on the network tools; string returns flow straight through as the next Observation, and the model picks a different arg shape next step.
+
+**The orchestrator loop.** A `for step in range(MAX_STEPS)` over a 10-step ceiling. Three-way termination on every turn — `tool_calls` present means dispatch; `content is not None` means a final answer (including an empty-string answer, which is still a real response); both missing means the model produced nothing and the loop exits with an `empty_response` error rather than falling through silently. The per-tool retry budget (`MAX_TOOL_RETRIES = 2`) resets each step — the model can legitimately re-call the same tool with adjusted args after seeing the first failure, and a "we already saw this `(name, args)`" guard would block that recovery. The `MAX_STEPS` ceiling is the backstop.
+
+**JSON trace, flushed every step.** Every `(step, role, name, args, result_truncated, latency_ms)` lands in `traces/<run_id>.json` before the next LLM call. The trace drives the eval scorer, the Streamlit demo's "show your work" UI, and — as it turned out — the debugging of the first real eval run.
+
+**The bug the first eval surfaced.** The initial 25-query run scored 9/25. Nine of the 16 failures were HTTP 400 crashes from Groq. The `raise_for_status()` call discarded Groq's error body, so the bug was invisible — the orchestrator just saw "400, raise" and bailed. Adding diagnostic logging on the response body revealed `error.code = "tool_use_failed"`: Groq returns this when the model emits unparseable function-call syntax (e.g., raw Python like `pint.Quantity("100°C")` as the `arguments` blob instead of a JSON object). The fix was to treat `tool_use_failed` as a retryable error class — same model, fresh sample, usually parses cleanly on the second try. That's the kind of integration bug you can only find by running the eval, instrumenting the request, and reading the actual error body. It's also the reason the headline number isn't here yet; the re-run is waiting on a Groq daily-token-budget reset.
 
 ## Results
 
-The agent could reliably answer chained questions that single-shot LLMs got wrong, and when it failed, the failure was inspectable in the reasoning trace rather than a silent fabrication. The retry-on-error wrapper meaningfully reduced the number of runs that died on a transient search-API blip.
+Five tools registered: Tavily web search, calculator (numexpr), datetime helper, unit conversion (pint), Wikipedia summary. The hand-curated benchmark is 25 multi-tool queries across 5 categories — search-then-compute, unit-conversion, datetime-reasoning, multi-search-synthesis, and multi-tool-freestyle. Every query is multi-tool by design (≥2 calls expected); single-tool queries are out, because they don't test the loop's value prop.
+
+**109 tests passing.** Per-tool unit tests (happy + error path for each of the 5), orchestrator multi-turn flows including the retry budget reset and the three-way termination check, the `@tool` decorator's schema generation (including `Optional[X]` handling), LLM client `chat_with_tools` for both Groq and Gemini (Gemini synthesizes call IDs since its API doesn't issue them), eval scorer edge cases, CLI argv parsing, and a Streamlit smoke test. CI runs on every push and PR.
+
+**CLI.** `multitool ask "<question>" -v` runs a single query and prints the answer plus an optional verbose trace.
+
+**Streamlit demo.** Same single-textbox UX as the Data Analysis Agent demo, with the trace rendered as collapsible per-step sections. Hugging Face Spaces deploy is shipping shortly; the iframe lands in a follow-up PR to this page.
+
+**The honest part of the headline.** The initial eval scored 9/25, but 9 of the 16 failures were the `tool_use_failed` bug, not the agent loop being wrong. The fix is in; the re-run is pending. I'd rather wait and publish a real number than ship the inflated *"after subtracting bug failures, the loop got 9/16 of the ones it actually attempted"* arithmetic.
 
 ## What I'd do differently
 
-ReAct's `Thought:` scaffolding eats tokens fast on long chains. I'd compare against a function-calling-native loop — the same agent semantics but driven by structured tool calls instead of free-form reasoning text — to see how much of the framework I actually need.
+**Instrument the integration before trusting the eval number.** The first eval run cost a meaningful chunk of the day's Groq quota and produced a 9/25 that meant nothing — because 9 of the 16 failures were Groq returning 400 with an error body the client was throwing away. The fix was a one-line `print(response.json())` on non-200 responses, which I should have shipped from day one. A code-as-action agent generates *prose* that goes wrong in legible ways; a function-calling agent generates *structured calls* that go wrong inside the provider, where the failure is invisible without diagnostic logging on the request boundary.
+
+The plan had assumed an OpenAI-compatible API would just behave like a clean transport — emit a tool call, get a result back. The model-emits-bad-syntax failure mode (Groq surfaces it as a 400 rather than retrying server-side) wasn't on the risk register. Both lessons land in the same place: when the contract between your loop and the provider is structured, you need *more* observability on the boundary than the prose-based equivalent, not less, because the failure modes don't show up in your own logs unless you go looking.
 
 ## Links
 
-- GitHub: <a href="https://github.com/laharikarumanchi-AI-ML">github.com/laharikarumanchi-AI-ML</a>
+- GitHub: <a href="https://github.com/laharikarumanchi-AI-ML/multi-tool-agent">github.com/laharikarumanchi-AI-ML/multi-tool-agent</a>
+- Streamlit demo: shipping shortly to Hugging Face Spaces
